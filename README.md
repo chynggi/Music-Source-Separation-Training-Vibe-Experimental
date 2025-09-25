@@ -23,6 +23,7 @@ Available models for training:
 * Conformer [[Paper](https://arxiv.org/abs/2005.08100), [Repository](https://github.com/lucidrains/conformer)] Key: `conformer`.
 * SCNet Tran Key: `scnet_tran`.
 * SCNet Masked Key: `scnet_masked`.
+* MusicLDM [[Paper](https://arxiv.org/abs/2205.12263), [Repository](https://github.com/RetroCirce/MusicLDM)] via [MSG-LD-Pytorch2](https://github.com/karchkha/MSG-LD). Key: `musicldm` (see dedicated section below).
 
 1. **Note 1**: For `segm_models` there are many different encoders is possible. [Look here](https://github.com/qubvel/segmentation_models.pytorch#encoders-).
 2. **Note 2**: Thanks to [@lucidrains](https://github.com/lucidrains) for recreating the RoFormer models based on papers.
@@ -32,7 +33,7 @@ Available models for training:
 
 To train model you need to:
 
-1) Choose model type with option `--model_type`, including: `mdx23c`, `htdemucs`, `segm_models`, `mel_band_roformer`, `bs_roformer`.
+1) Choose model type with option `--model_type`, including: `mdx23c`, `htdemucs`, `segm_models`, `mel_band_roformer`, `bs_roformer`, `musicldm`.
 2) Choose location of config for model `--config_path` `<config path>`. You can find examples of configs in [configs folder](configs/). Prefixes `config_musdb18_` are examples for [MUSDB18 dataset](https://sigsep.github.io/datasets/musdb.html).
 3) If you have a check-point from the same model or from another similar model you can use it with option: `--start_check_point` `<weights path>`
 4) Choose path where to store results of training `--results_path` `<results folder path>`
@@ -52,6 +53,32 @@ python train.py \
 ```
 
 All training parameters are [here](https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/utils/settings.py#L20).
+
+### Training MSG-LD (MusicLDM)
+
+The repository now supports launching [MSG-LD-Pytorch2](https://github.com/facebookresearch/MSG-LD)’s MusicLDM trainer directly through `train.py`.
+
+Requirements:
+
+* Clone/download `MSG-LD-Pytorch2` next to this repository (`../MSG-LD-Pytorch2`).
+* Install MSG-LD dependencies (see its `requirements.txt` or `musicldm_env.yml`).
+* Provide a MusicLDM YAML config when calling `train.py`.
+
+Example:
+
+```bash
+python train.py \
+    --model_type musicldm \
+    --config_path ../MSG-LD-Pytorch2/config/MSG-LD/multichannel_musicldm_slakh_3d_train.yaml \
+    --results_path results/musicldm_run \
+    --data_path /datasets/slakh/train \
+    --valid_path /datasets/slakh/valid \
+    --device_ids 0 1 \
+    --num_workers 8 \
+    --seed 1234
+```
+
+The wrapper forwards CLI options (seed, dataset paths, workers, device IDs, wandb key) to MSG-LD. Outputs, resolved configs, and metadata are stored under `--results_path` alongside the usual training artifacts.
 
 ### Training with LoRA
 

@@ -184,6 +184,13 @@ def train_model(args: argparse.Namespace) -> None:
     args = parse_args_train(args)
 
     initialize_environment(args.seed, args.results_path)
+
+    if args.model_type == "musicldm":
+        from utils.msgld_integration import train_with_msgld
+
+        train_with_msgld(args)
+        return
+
     model, config = get_model_from_config(args.model_type, args.config_path)
     use_amp = getattr(config.training, 'use_amp', True)
     device_ids = args.device_ids

@@ -31,7 +31,7 @@ def parse_args_train(dict_args: Union[Dict, None]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer, bs_roformer, swin_upernet, bandit")
+                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer, bs_roformer, swin_upernet, bandit, musicldm")
     parser.add_argument("--config_path", type=str, help="path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint to start training")
     parser.add_argument("--load_optimizer", action='store_true', help="Load optimizer state from checkpoint (if available)")
