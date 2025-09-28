@@ -61,8 +61,8 @@ def train_one_epoch(model: torch.nn.Module, config: ConfigDict, args: argparse.N
 
     normalize = getattr(config.training, 'normalize', False)
 
-    get_internal_loss = ( args.model_type in ('mel_band_conformer',) or 'roformer' in args.model_type
-                    ) and not args.use_standard_loss
+    get_internal_loss = (args.model_type in ('mel_band_roformer', 'bs_roformer', 'mel_band_conformer', 'bs_conformer')
+                        and not args.use_standard_loss)
 
     pbar = tqdm(train_loader)
     for i, (batch, mixes) in enumerate(pbar):

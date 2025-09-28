@@ -42,8 +42,9 @@ def train_one_epoch(model: torch.nn.Module, config: ConfigDict, args: argparse.N
     total = 0
 
     normalize = getattr(config.training, 'normalize', False)
-    get_internal_loss = (args.model_type in ('mel_band_conformer',) or 'roformer' in args.model_type
-                         ) and not args.use_standard_loss
+    get_internal_loss = (args.model_type in ('mel_band_roformer', 'bs_roformer', 'mel_band_conformer', 'bs_conformer')
+                         and not args.use_standard_loss)
+
     pbar = tqdm(train_loader,
                 dynamic_ncols=True) if dist.get_rank() == 0 else train_loader  # Only main process print progress bar
 
@@ -243,6 +244,7 @@ def train_model_single(rank: int, world_size: int, args=None):
 
         print(f'Train for: {config.training.num_epochs} epochs')
         log_model_info(model, args.results_path)
+
     for epoch in range(start_epoch, config.training.num_epochs):
         train_loader.sampler.set_epoch(epoch)
 
