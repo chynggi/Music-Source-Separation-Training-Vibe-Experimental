@@ -30,7 +30,7 @@ class BandSplitModule(nn.Module):
         self.is_mono = is_mono
         self.bandwidth_indices = freq2bands(bandsplits, sr, n_fft)
         self.layernorms = nn.ModuleList(
-            [nn.LayerNorm([(end - start) * frequency_mul, t_timesteps]) for start, end in self.bandwidth_indices]
+            [nn.LayerNorm((end - start) * frequency_mul) for start, end in self.bandwidth_indices]
         )
         self.fcs = nn.ModuleList(
             [nn.Linear((end - start) * frequency_mul, fc_dim) for start, end in self.bandwidth_indices]
@@ -48,8 +48,9 @@ class BandSplitModule(nn.Module):
             if band.dtype == torch.cfloat:
                 band = torch.view_as_real(band).permute(0, 1, 4, 2, 3)
             band = band.reshape(batch, -1, frames)
-            band = self.layernorms[idx](band)
             band = band.transpose(-1, -2)
+            # Normalize per time frame to support variable-length sequences
+            band = self.layernorms[idx](band)
             band = self.fcs[idx](band)
             subbands.append(band)
         return torch.stack(subbands, dim=1)

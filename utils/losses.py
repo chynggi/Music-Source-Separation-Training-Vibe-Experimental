@@ -9,6 +9,37 @@ from torch import nn
 from torch_log_wmse import LogWMSE
 
 
+def _get_config_value(section: Any, key: str, default: Any) -> Any:
+    # Gracefully resolve optional config entries with a fallback.
+    if section is None:
+        return default
+
+    if hasattr(section, key):
+        value = getattr(section, key)
+        if value is not None:
+            return value
+
+    if hasattr(section, 'get'):
+        try:
+            value = section.get(key, default)
+        except TypeError:
+            value = default
+        if value is not None:
+            return value
+
+    if isinstance(section, dict):
+        value = section.get(key, default)
+        if value is not None:
+            return value
+
+    try:
+        value = section[key]  # type: ignore[index]
+    except Exception:
+        return default
+
+    return default if value is None else value
+
+
 def multistft_loss(
     y_: torch.Tensor,
     y: torch.Tensor,
@@ -216,13 +247,17 @@ def choice_loss(
     """
 
     loss_fns = []
+    training_cfg = getattr(config, 'training', None)
+    quantile = _get_config_value(training_cfg, 'q', 0.9)
+    coarse_mask = _get_config_value(training_cfg, 'coarse_loss_clip', True)
+    bypass_filter = _get_config_value(training_cfg, 'bypass_filter', False)
 
     if 'masked_loss' in args.loss:
         loss_fns.append(
             lambda y_pred, y_true, x=None:
             masked_loss(y_pred, y_true,
-                        q=config['training']['q'],
-                        coarse=config['training']['coarse_loss_clip'])
+                        q=quantile,
+                        coarse=coarse_mask)
             * args.masked_loss_coef
         )
 
@@ -251,7 +286,7 @@ def choice_loss(
                          // int(getattr(config.audio, 'sample_rate', 44100)),
             sample_rate=int(getattr(config.audio, 'sample_rate', 44100)),
             return_as_loss=True,
-            bypass_filter=getattr(config.training, 'bypass_filter', False),
+            bypass_filter=bypass_filter,
         )
         loss_fns.append(
             lambda y_pred, y_true, x: log_wmse(x, y_pred, y_true)
@@ -281,8 +316,8 @@ def choice_loss(
         loss_fns.append(
             lambda y_pred, y_true, x=None: spec_masked_loss(y_pred, y_true,
                                                             stft_config,
-                                                            q=config['training']['q'],
-                                                            coarse=config['training']['coarse_loss_clip'])
+                                                            q=quantile,
+                                                            coarse=coarse_mask)
                                            * args.spec_masked_loss_coef
         )
 
