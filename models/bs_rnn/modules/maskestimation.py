@@ -69,7 +69,10 @@ class MaskEstimationModule(nn.Module):
         self.frequency_mul = frequency_mul
 
         self.bandwidths = [(end - start) for start, end in freq2bands(bandsplits, sr, n_fft)]
-        self.layernorms = nn.ModuleList([nn.LayerNorm([t_timesteps, fc_dim]) for _ in self.bandwidths])
+        # Normalize across feature dimension so variable-length time axes remain valid
+        self.layernorms = nn.ModuleList(
+            [nn.LayerNorm(fc_dim) for _ in self.bandwidths]
+        )
         self.mlps = nn.ModuleList(
             [MLP(fc_dim, mlp_dim, bandwidth * frequency_mul, activation) for bandwidth in self.bandwidths]
         )

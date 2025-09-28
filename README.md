@@ -54,32 +54,6 @@ python train.py \
 
 All training parameters are [here](https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/utils/settings.py#L20).
 
-### Training MSG-LD (MusicLDM)
-
-The repository now supports launching [MSG-LD-Pytorch2](https://github.com/facebookresearch/MSG-LD)’s MusicLDM trainer directly through `train.py`.
-
-Requirements:
-
-* Clone/download `MSG-LD-Pytorch2` next to this repository (`../MSG-LD-Pytorch2`).
-* Install MSG-LD dependencies (see its `requirements.txt` or `musicldm_env.yml`).
-* Provide a MusicLDM YAML config when calling `train.py`.
-
-Example:
-
-```bash
-python train.py \
-    --model_type musicldm \
-    --config_path ../MSG-LD-Pytorch2/config/MSG-LD/multichannel_musicldm_slakh_3d_train.yaml \
-    --results_path results/musicldm_run \
-    --data_path /datasets/slakh/train \
-    --valid_path /datasets/slakh/valid \
-    --device_ids 0 1 \
-    --num_workers 8 \
-    --seed 1234
-```
-
-The wrapper forwards CLI options (seed, dataset paths, workers, device IDs, wandb key) to MSG-LD. Outputs, resolved configs, and metadata are stored under `--results_path` alongside the usual training artifacts.
-
 ### Training with LoRA
 
 Look here: [LoRA training](docs/LoRA.md)
