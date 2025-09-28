@@ -1,5 +1,9 @@
 ### Changes 
 
++#### Unreleased
++
++* Added BandSplit RNN (`bs_rnn`) model integration and MUSDB config template.
++
 #### v1.0.2
 
 * Added multi GPU validation (earlier validation was performed on single GPU)

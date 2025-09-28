@@ -31,7 +31,7 @@ def parse_args_train(dict_args: Union[Dict, None]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer, bs_roformer, swin_upernet, bandit, musicldm")
+                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer, bs_roformer, bs_rnn, swin_upernet, bandit, musicldm")
     parser.add_argument("--config_path", type=str, help="path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint to start training")
     parser.add_argument("--load_optimizer", action='store_true', help="Load optimizer state from checkpoint (if available)")
@@ -122,7 +122,7 @@ def parse_args_valid(dict_args: Union[Dict, None]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
                         help="One of mdx23c, htdemucs, segm_models, mel_band_roformer,"
-                             " bs_roformer, swin_upernet, bandit")
+                             " bs_roformer, bs_rnn, swin_upernet, bandit")
     parser.add_argument("--config_path", type=str, help="Path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint"
                                                                           " to valid weights")
@@ -173,7 +173,7 @@ def parse_args_inference(dict_args: Union[Dict, None]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of bandit, bandit_v2, bs_roformer, htdemucs, mdx23c, mel_band_roformer,"
+                        help="One of bandit, bandit_v2, bs_roformer, bs_rnn, htdemucs, mdx23c, mel_band_roformer,"
                              " scnet, scnet_unofficial, segm_models, swin_upernet, torchseg")
     parser.add_argument("--config_path", type=str, help="path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint to valid weights")
@@ -329,6 +329,9 @@ def get_model_from_config(model_type: str, config_path: str) -> Tuple[nn.Module,
     elif model_type =='mel_band_conformer':
         from models.mel_band_conformer import MelBandConformer
         model = MelBandConformer(**config.model)
+    elif model_type == 'bs_rnn':
+        from models.bs_rnn import BandSplitRNNSeparator
+        model = BandSplitRNNSeparator(**dict(config.model))
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
