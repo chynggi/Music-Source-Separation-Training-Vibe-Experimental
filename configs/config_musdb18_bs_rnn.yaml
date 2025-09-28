@@ -1,0 +1,66 @@
+audio:
+  chunk_size: 131584
+  sample_rate: 44100
+  hop_length: 512
+  n_fft: 2048
+  win_length: 2048
+  num_channels: 2
+  min_mean_abs: 0.001
+
+model:
+  sr: 44100
+  n_fft: 2048
+  hop_length: 512
+  win_length: 2048
+  num_instruments: 4
+  bandsplits:
+    - [1000, 100]
+    - [4000, 250]
+    - [8000, 500]
+    - [16000, 1000]
+    - [20000, 2000]
+  fc_dim: 128
+  mlp_dim: 512
+  bottleneck_layer: "rnn"
+  rnn_dim: 256
+  rnn_type: "LSTM"
+  bidirectional: true
+  num_layers: 12
+  complex_as_channel: true
+  is_mono: false
+  transformer_heads: 4
+  transformer_dropout: 0.0
+  transformer_ff_dim: 512
+  activation: "tanh"
+  chunk_size: 131584
+  return_mask: false
+
+training:
+  batch_size: 6
+  gradient_accumulation_steps: 1
+  grad_clip: 5.0
+  instruments:
+    - vocals
+    - bass
+    - drums
+    - other
+  lr: 0.0005
+  patience: 3
+  reduce_factor: 0.5
+  target_instrument: null
+  num_epochs: 400
+  num_steps: 1000
+  optimizer: adam
+  use_amp: true
+  read_metadata_procs: 4
+
+augmentations:
+  enable: true
+  loudness: true
+  loudness_min: 0.5
+  loudness_max: 1.5
+
+inference:
+  batch_size: 1
+  chunk_size: 131584
+  num_overlap: 4
