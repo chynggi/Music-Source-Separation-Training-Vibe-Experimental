@@ -23,7 +23,6 @@ Available models for training:
 * Conformer [[Paper](https://arxiv.org/abs/2005.08100), [Repository](https://github.com/lucidrains/conformer)] Key: `conformer`.
 * SCNet Tran Key: `scnet_tran`.
 * SCNet Masked Key: `scnet_masked`.
-* MusicLDM [[Paper](https://arxiv.org/abs/2205.12263), [Repository](https://github.com/RetroCirce/MusicLDM)] via [MSG-LD-Pytorch2](https://github.com/karchkha/MSG-LD). Key: `musicldm` (see dedicated section below).
 
 1. **Note 1**: For `segm_models` there are many different encoders is possible. [Look here](https://github.com/qubvel/segmentation_models.pytorch#encoders-).
 2. **Note 2**: Thanks to [@lucidrains](https://github.com/lucidrains) for recreating the RoFormer models based on papers.
