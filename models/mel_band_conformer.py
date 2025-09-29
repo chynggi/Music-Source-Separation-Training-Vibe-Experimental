@@ -3,12 +3,14 @@ from functools import partial
 import torch
 from torch import nn
 import torch.nn.functional as F
-from conformer import Conformer
+from conformer import Conformer  # type: ignore[import-not-found]
 from torch.nn import Module, ModuleList
 from librosa import filters
 from beartype.typing import Tuple, Optional, List, Callable
 from beartype import beartype
 from einops import rearrange, pack, unpack, reduce, repeat
+
+from models.bs_roformer.positional import AbsolutePositionalEncoding
 
 # helper functions
 
@@ -165,6 +167,8 @@ class MelBandConformer(nn.Module):
 
         use_torch_checkpoint: bool = False,
         skip_connection: bool = False,
+        freq_positional_encoding: str = "absolute",
+        freq_positional_learned: bool = False,
     ):
         super().__init__()
 
@@ -193,6 +197,19 @@ class MelBandConformer(nn.Module):
             time_block = Conformer(depth=time_conformer_depth, **conformer_kwargs)
             freq_block = Conformer(depth=freq_conformer_depth, **conformer_kwargs)
             self.layers.append(nn.ModuleList([time_block, freq_block]))
+
+        freq_encoding_mode = freq_positional_encoding.lower()
+        if freq_encoding_mode not in {"absolute", "rope", "none"}:
+            raise ValueError(f"Unknown freq_positional_encoding: {freq_positional_encoding}")
+
+        if freq_encoding_mode == "absolute":
+            self.freq_positional_encoding = AbsolutePositionalEncoding(
+                num_bands,
+                dim,
+                learnable=freq_positional_learned,
+            )
+        else:
+            self.freq_positional_encoding = None
 
         self.stft_window_fn = partial(stft_window_fn or torch.hann_window, stft_win_length)
 
@@ -336,6 +353,9 @@ class MelBandConformer(nn.Module):
             # Freq axis: (b, t, f, d) -> ((b*t), f, d)
             bsz, tlen, bands, d = x.shape
             x_freq = rearrange(x, 'b t f d -> (b t) f d')
+
+            if self.freq_positional_encoding is not None:
+                x_freq = self.freq_positional_encoding.add_to(x_freq)
 
             if self.use_torch_checkpoint:
                 x_freq = torch.utils.checkpoint.checkpoint(freq_conf, x_freq, use_reentrant=False)

@@ -1,9 +1,10 @@
 ### Changes 
 
-+#### Unreleased
-+
-+* Added BandSplit RNN (`bs_rnn`) model integration and MUSDB config template.
-+
+#### Unreleased
+
+* Added BandSplit RNN (`bs_rnn`) model integration and MUSDB config template.
+* Introduced absolute frequency positional encodings and Conv1d-enhanced feed-forward blocks for Mel/Band RoFormer and Conformer models (`freq_positional_encoding`, `ff_use_conv1d`, `ff_conv_kernel_size`).
+
 #### v1.0.2
 
 * Added multi GPU validation (earlier validation was performed on single GPU)

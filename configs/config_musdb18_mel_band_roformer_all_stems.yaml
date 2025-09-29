@@ -23,11 +23,16 @@ model:
   ff_dropout: 0
   flash_attn: True
   dim_freqs_in: 1025
-  sample_rate: 44100  # needed for mel filter bank from librosa
+  sample_rate: 44100 # needed for mel filter bank from librosa
   stft_n_fft: 2048
-  stft_hop_length: 441
+  stft_hop_length: 512
   stft_win_length: 2048
   stft_normalized: False
+  freq_positional_encoding: absolute
+  freq_positional_learned: false
+  ff_use_conv1d: true
+  ff_conv_kernel_size: 3
+  ff_conv_groups: null
   mask_estimator_depth: 2
   multi_stft_resolution_loss_weight: 1.0
   multi_stft_resolutions_window_sizes: !!python/tuple
