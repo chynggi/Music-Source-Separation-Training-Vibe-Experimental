@@ -40,6 +40,8 @@ model:
   stft_hop_length: 441
   stft_win_length: 2048
   stft_normalized: False
+  freq_positional_encoding: absolute
+  freq_positional_learned: false
 
   # mask estimator + multi-res STFT loss
   mask_estimator_depth: 2

@@ -21,6 +21,7 @@ from einops import rearrange, pack, unpack, reduce, repeat
 from einops.layers.torch import Rearrange
 
 from librosa import filters
+from models.bs_roformer.positional import AbsolutePositionalEncoding
 
 
 # helper functions
@@ -70,21 +71,55 @@ class FeedForward(Module):
             self,
             dim,
             mult=4,
-            dropout=0.
+            dropout=0.,
+            use_conv=True,
+            conv_kernel_size=3,
+            conv_groups: Optional[int] = None,
     ):
         super().__init__()
         dim_inner = int(dim * mult)
-        self.net = nn.Sequential(
-            RMSNorm(dim),
-            nn.Linear(dim, dim_inner),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(dim_inner, dim),
-            nn.Dropout(dropout)
-        )
+        self.use_conv = use_conv and conv_kernel_size > 1
+        self.norm = RMSNorm(dim)
+        self.linear_in = nn.Linear(dim, dim_inner)
+        self.activation = nn.GELU()
+        self.dropout = nn.Dropout(dropout)
+
+        if self.use_conv:
+            groups = conv_groups if conv_groups is not None else dim_inner
+            padding = conv_kernel_size // 2
+            self.depthwise_conv = nn.Conv1d(
+                dim_inner,
+                dim_inner,
+                kernel_size=conv_kernel_size,
+                padding=padding,
+                groups=groups,
+            )
+            self.conv_activation = nn.GELU()
+            self.pointwise_conv = nn.Conv1d(dim_inner, dim_inner, kernel_size=1)
+        else:
+            self.depthwise_conv = None
+            self.pointwise_conv = None
+            self.conv_activation = None
+
+        self.linear_out = nn.Linear(dim_inner, dim)
+        self.dropout_out = nn.Dropout(dropout)
 
     def forward(self, x):
-        return self.net(x)
+        x = self.norm(x)
+        x = self.linear_in(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+
+        if self.use_conv and self.depthwise_conv is not None and self.pointwise_conv is not None:
+            x_conv = rearrange(x, 'b n d -> b d n')
+            x_conv = self.depthwise_conv(x_conv)
+            x_conv = self.conv_activation(x_conv)
+            x_conv = self.pointwise_conv(x_conv)
+            x = rearrange(x_conv, 'b d n -> b n d')
+
+        x = self.linear_out(x)
+        x = self.dropout_out(x)
+        return x
 
 
 class Attention(Module):
@@ -215,6 +250,9 @@ class Transformer(Module):
             flash_attn=True,
             linear_attn=False,
             sage_attention=False,
+            ff_use_conv=True,
+            ff_conv_kernel_size=3,
+            ff_conv_groups: Optional[int] = None,
     ):
         super().__init__()
         self.layers = ModuleList([])
@@ -242,7 +280,14 @@ class Transformer(Module):
 
             self.layers.append(ModuleList([
                 attn,
-                FeedForward(dim=dim, mult=ff_mult, dropout=ff_dropout)
+                FeedForward(
+                    dim=dim,
+                    mult=ff_mult,
+                    dropout=ff_dropout,
+                    use_conv=ff_use_conv,
+                    conv_kernel_size=ff_conv_kernel_size,
+                    conv_groups=ff_conv_groups,
+                )
             ]))
 
         self.norm = RMSNorm(dim) if norm_output else nn.Identity()
@@ -390,6 +435,11 @@ class MelBandRoformer(Module):
             use_torch_checkpoint=False,
             skip_connection=False,
             sage_attention=False,
+            freq_positional_encoding: str = "absolute",
+            freq_positional_learned: bool = False,
+            ff_use_conv1d: bool = True,
+            ff_conv_kernel_size: int = 3,
+            ff_conv_groups: Optional[int] = None,
     ):
         super().__init__()
 
@@ -412,10 +462,30 @@ class MelBandRoformer(Module):
             ff_dropout=ff_dropout,
             flash_attn=flash_attn,
             sage_attention=sage_attention,
+            ff_use_conv=ff_use_conv1d,
+            ff_conv_kernel_size=ff_conv_kernel_size,
+            ff_conv_groups=ff_conv_groups,
         )
 
         time_rotary_embed = RotaryEmbedding(dim=dim_head)
-        freq_rotary_embed = RotaryEmbedding(dim=dim_head)
+
+        freq_encoding_mode = freq_positional_encoding.lower()
+        if freq_encoding_mode not in {"absolute", "rope", "none"}:
+            raise ValueError(f"Unknown freq_positional_encoding: {freq_positional_encoding}")
+
+        if freq_encoding_mode == "absolute":
+            self.freq_positional_encoding = AbsolutePositionalEncoding(
+                num_bands,
+                dim,
+                learnable=freq_positional_learned,
+            )
+            freq_rotary_embed = None
+        elif freq_encoding_mode == "rope":
+            self.freq_positional_encoding = None
+            freq_rotary_embed = RotaryEmbedding(dim=dim_head)
+        else:
+            self.freq_positional_encoding = None
+            freq_rotary_embed = None
 
         for _ in range(depth):
             tran_modules = []
@@ -611,6 +681,9 @@ class MelBandRoformer(Module):
             x, = unpack(x, ps, '* t d')
             x = rearrange(x, 'b f t d -> b t f d')
             x, ps = pack([x], '* f d')
+
+            if self.freq_positional_encoding is not None:
+                x = self.freq_positional_encoding.add_to(x)
 
             if self.use_torch_checkpoint:
                 x = checkpoint(freq_transformer, x, use_reentrant=False)

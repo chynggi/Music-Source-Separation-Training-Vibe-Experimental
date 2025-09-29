@@ -2,6 +2,11 @@
 
 You can use table below to choose BS Roformer `batch_size` parameter for training based on your GPUs. Batch size values provided for single GPU. If you have several GPUs you need to multiply value on number of GPUs. 
 
+**Architectural toggles (Phase 1)**
+- `freq_positional_encoding`: set to `absolute` for sinusoidal bands, or `rope`/`none` for legacy behaviour.
+- `freq_positional_learned`: switch to `true` to learn per-band embeddings instead of using fixed sinusoids.
+- `ff_use_conv1d` and `ff_conv_kernel_size`: enable Conv1d-based FFN mixing across neighbouring frequencies/time steps.
+
 | chunk_size | dim | depth | batch_size (A6000 48GB) | batch_size (3090/4090 24GB) | batch_size (16GB) |
 |:----------:|:---:|:-----:|:-----------------------:|:---------------------------:|:-----------------:|
 |   131584   | 128 |   6   |           10            |              5              |         3         |
@@ -142,4 +147,3 @@ training:
   optimizer: adam
   other_fix: false # it's needed for checking on multisong dataset if other is actually instrumental
   use_amp: true # enable or disable usage of mixed precision (float16) - usually it must be true
-```
