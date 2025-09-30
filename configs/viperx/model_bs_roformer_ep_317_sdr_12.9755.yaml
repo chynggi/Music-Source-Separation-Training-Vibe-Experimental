@@ -15,6 +15,12 @@ model:
   num_stems: 1
   time_transformer_depth: 1
   freq_transformer_depth: 1
+  time_attention_type: full
+  freq_attention_type: full
+  time_sparse_window_size: null
+  freq_sparse_window_size: null
+  time_sparse_global_tokens: 0
+  freq_sparse_global_tokens: 0
   linear_transformer_depth: 0
   freqs_per_bands: !!python/tuple
     - 2
