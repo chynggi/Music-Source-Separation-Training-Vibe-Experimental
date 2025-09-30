@@ -1,6 +1,6 @@
 audio:
   chunk_size: 132300  # samplerate * segment
-  hop_length: 1024
+  hop_length: 441
   min_mean_abs: 0.0
 
 training:
