@@ -15,11 +15,11 @@ training:
   channels: 2
   normalize: true
   instruments: ['vocals', 'other']
-  target_instrument: null
+  target_instrument: 'vocals'
   num_epochs: 1000
   num_steps: 1000
   optimizer: prodigy
-  lr: 1.0
+  lr: 5e-5
   patience: 2
   reduce_factor: 0.95
   q: 0.95
@@ -55,5 +55,5 @@ augmentations:
 
 inference:
   num_overlap: 2
-  batch_size: 5
+  batch_size: 4
 
