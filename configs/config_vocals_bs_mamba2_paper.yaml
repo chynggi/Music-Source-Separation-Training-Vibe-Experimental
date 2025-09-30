@@ -1,0 +1,59 @@
+# config_musdb18_bs_mamba2_paper.yaml
+
+audio:
+  chunk_size: 352800             # 8초 x 44100Hz (논문: 8초 segmented)
+  hop_length: 441                # 논문: window=2048, hop_size=441
+  min_mean_abs: 0.0
+
+training:
+  batch_size: 1                  # 논문: 2 GPU, 5 per GPU → 10, gradient_accumulation_steps: 6, effective 60
+  gradient_accumulation_steps: 6
+  grad_clip: 0
+  segment: 8                     # 논문: 8초
+  shift: 1
+  samplerate: 44100
+  channels: 2
+  normalize: true
+  instruments: ['vocals', 'other']
+  target_instrument: null
+  num_epochs: 1000
+  num_steps: 1000
+  optimizer: prodigy
+  lr: 1.0
+  patience: 2
+  reduce_factor: 0.95
+  q: 0.95
+  coarse_loss_clip: true
+  ema_momentum: 0.999
+  read_metadata_procs: 8
+  other_fix: false
+  use_amp: true                  # 논문: BSMamba2는 bfloat16, MSST는 float16
+
+model:
+  sr: 44100
+  win: 2048
+  stride: 441
+  feature_dim: 256               # 논문: hidden dimension D=256
+  num_repeat_mask: 6             # 논문: depth L=6 (dual-path modules)
+  num_repeat_map: 6
+  num_output: 4
+  num_subbands: 62               # 논문: number of sub-bands=62
+
+augmentations:
+  enable: true                   # 논문도 다양한 증강 사용
+  loudness: true
+  loudness_min: 0.5
+  loudness_max: 1.5
+  mixup: true
+  mixup_probs: [0.2, 0.02]       # 공식 config 예제 사용
+  mixup_loudness_min: 0.5
+  mixup_loudness_max: 1.5
+  all:
+    channel_shuffle: 0.5
+    random_inverse: 0.1
+    random_polarity: 0.5
+
+inference:
+  num_overlap: 2
+  batch_size: 5
+
