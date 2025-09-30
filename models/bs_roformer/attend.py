@@ -94,7 +94,7 @@ class Attend(nn.Module):
 
         return out
 
-    def forward(self, q, k, v):
+    def forward(self, q, k, v, mask=None):
         """
         einstein notation
         b - batch
@@ -107,12 +107,19 @@ class Attend(nn.Module):
 
         scale = default(self.scale, q.shape[-1] ** -0.5)
 
-        if self.flash:
+        if self.flash and mask is None:
             return self.flash_attn(q, k, v)
 
         # similarity
 
         sim = einsum(f"b h i d, b h j d -> b h i j", q, k) * scale
+
+        if exists(mask):
+            if mask.ndim == 2:
+                mask = mask.unsqueeze(0).unsqueeze(0)
+            elif mask.ndim == 3:
+                mask = mask.unsqueeze(1)
+            sim = sim.masked_fill(mask, float('-inf'))
 
         # attention
 

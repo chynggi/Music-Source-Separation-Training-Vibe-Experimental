@@ -132,6 +132,8 @@ class Attention(Module):
             rotary_embed=None,
             flash=True,
             sage_attention=False,
+            sparse_window_size: Optional[int] = None,
+            sparse_global_tokens: int = 0,
     ):
         super().__init__()
         self.heads = heads
@@ -139,6 +141,12 @@ class Attention(Module):
         dim_inner = heads * dim_head
 
         self.rotary_embed = rotary_embed
+        self.sparse_window_size = sparse_window_size
+        self.sparse_global_tokens = sparse_global_tokens
+        self._mask_cache = {}
+
+        if exists(self.sparse_window_size):
+            flash = False
 
         if sage_attention:
             self.attend = AttendSage(flash=flash, dropout=dropout)
@@ -154,6 +162,29 @@ class Attention(Module):
             nn.Dropout(dropout)
         )
 
+    def _sparse_mask(self, seq_len: int, device: torch.device):
+        if not exists(self.sparse_window_size):
+            return None
+
+        cache_key = (seq_len, device.type, device.index if device.index is not None else -1)
+        cached = self._mask_cache.get(cache_key)
+        if exists(cached):
+            return cached
+
+        window = self.sparse_window_size
+        global_tokens = max(self.sparse_global_tokens, 0)
+
+        idx = torch.arange(seq_len, device=device)
+        rel = idx[:, None] - idx[None, :]
+        mask = rel.abs() > window
+
+        if global_tokens > 0:
+            mask[:, :global_tokens] = False
+            mask[:global_tokens, :] = False
+
+        self._mask_cache[cache_key] = mask
+        return mask
+
     def forward(self, x):
         x = self.norm(x)
 
@@ -163,7 +194,9 @@ class Attention(Module):
             q = self.rotary_embed.rotate_queries_or_keys(q)
             k = self.rotary_embed.rotate_queries_or_keys(k)
 
-        out = self.attend(q, k, v)
+        mask = self._sparse_mask(q.shape[-2], q.device)
+
+        out = self.attend(q, k, v, mask=mask)
 
         gates = self.to_gates(x)
         out = out * rearrange(gates, 'b n h -> b h n 1').sigmoid()
@@ -253,9 +286,14 @@ class Transformer(Module):
             ff_use_conv=True,
             ff_conv_kernel_size=3,
             ff_conv_groups: Optional[int] = None,
+            attention_type: str = "full",
+            sparse_window_size: Optional[int] = None,
+            sparse_global_tokens: int = 0,
     ):
         super().__init__()
         self.layers = ModuleList([])
+
+        attention_type = attention_type.lower()
 
         for _ in range(depth):
             if linear_attn:
@@ -275,7 +313,9 @@ class Transformer(Module):
                     dropout=attn_dropout,
                     rotary_embed=rotary_embed,
                     flash=flash_attn,
-                    sage_attention=sage_attention
+                    sage_attention=sage_attention,
+                    sparse_window_size=sparse_window_size if attention_type == "sparse" else None,
+                    sparse_global_tokens=sparse_global_tokens if attention_type == "sparse" else 0
                 )
 
             self.layers.append(ModuleList([
@@ -440,6 +480,12 @@ class MelBandRoformer(Module):
             ff_use_conv1d: bool = True,
             ff_conv_kernel_size: int = 3,
             ff_conv_groups: Optional[int] = None,
+            time_attention_type: str = "full",
+            freq_attention_type: str = "full",
+            time_sparse_window_size: Optional[int] = None,
+            freq_sparse_window_size: Optional[int] = None,
+            time_sparse_global_tokens: int = 0,
+            freq_sparse_global_tokens: int = 0,
     ):
         super().__init__()
 
@@ -492,10 +538,24 @@ class MelBandRoformer(Module):
             if linear_transformer_depth > 0:
                 tran_modules.append(Transformer(depth=linear_transformer_depth, linear_attn=True, **transformer_kwargs))
             tran_modules.append(
-                Transformer(depth=time_transformer_depth, rotary_embed=time_rotary_embed, **transformer_kwargs)
+                Transformer(
+                    depth=time_transformer_depth,
+                    rotary_embed=time_rotary_embed,
+                    attention_type=time_attention_type,
+                    sparse_window_size=time_sparse_window_size,
+                    sparse_global_tokens=time_sparse_global_tokens,
+                    **transformer_kwargs
+                )
             )
             tran_modules.append(
-                Transformer(depth=freq_transformer_depth, rotary_embed=freq_rotary_embed, **transformer_kwargs)
+                Transformer(
+                    depth=freq_transformer_depth,
+                    rotary_embed=freq_rotary_embed,
+                    attention_type=freq_attention_type,
+                    sparse_window_size=freq_sparse_window_size,
+                    sparse_global_tokens=freq_sparse_global_tokens,
+                    **transformer_kwargs
+                )
             )
             self.layers.append(nn.ModuleList(tran_modules))
 
