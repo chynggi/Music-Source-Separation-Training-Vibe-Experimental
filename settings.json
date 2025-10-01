@@ -1,0 +1,17 @@
+{
+  "model_type": "",
+  "config_path": "",
+  "start_checkpoint": "",
+  "results_path": "",
+  "data_paths": "",
+  "valid_paths": "",
+  "num_workers": "4",
+  "device_ids": "0",
+  "infer_model_type": "bs_roformer",
+  "infer_config_path": "M:\\Diff\\Music-Source-Separation-Training\\configs\\bsrofo_fno.yaml",
+  "infer_start_checkpoint": "M:\\Diff\\Music-Source-Separation-Training\\ckpts\\bs_roformer_fno.ckpt",
+  "infer_input_folder": "O:\\GDrive_Sync_Alt\\input",
+  "infer_store_dir": "D:\\FNO",
+  "extract_instrumental": true,
+  "saved_combinations": {}
+}
