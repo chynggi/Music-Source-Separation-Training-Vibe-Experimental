@@ -1,0 +1,122 @@
+# CMX-Enhanced MDX23C Configuration
+# This configuration enables Channel Multiplexing for memory-efficient music source separation
+# Based on MARS paper (arXiv:2509.26007) - reduces memory by up to 75%
+
+audio:
+  num_channels: 2
+  sample_rate: 44100
+  chunk_size: 352800  # 8 seconds * 44100 Hz
+  min_mean_abs: 0.001
+  hop_length: 1024
+  n_fft: 2048
+  dim_f: 2048
+  dim_t: 2048
+  
+  # CMX (Channel Multiplexing) Configuration
+  # Reduces spatial dimensions while preserving frequency information
+  use_cmx: true           # Enable Channel Multiplexing
+  cmx_reduction: 2        # Reduction factor: 2 = 75% spatial reduction
+                          # Higher values = more memory savings, but diminishing returns
+                          # Recommended: 2 (balanced), 3 (aggressive), 1 or false (disabled)
+
+model:
+  type: 'mdx23c'
+  num_subbands: 4
+  
+  # TFC-TDF Architecture Parameters
+  num_scales: 5
+  scale: [2, 2]
+  num_blocks_per_scale: 2
+  num_channels: 32
+  growth: 128
+  bottleneck_factor: 4
+  
+  # Normalization and Activation
+  norm: 'InstanceNorm'    # Options: 'BatchNorm', 'InstanceNorm', 'GroupNorm16', etc.
+  act: 'gelu'             # Options: 'gelu', 'relu', 'elu1.0', etc.
+
+training:
+  batch_size: 16          # Increased from typical 8 due to CMX memory savings
+  gradient_accumulation_steps: 1
+  grad_clip: 0.5
+  instruments: ['bass', 'drums', 'other', 'vocals']
+  target_instrument: null  # Train for all stems
+  num_epochs: 1000
+  num_workers: 4
+  pin_memory: true
+  seed: 0
+  
+  # Loss Configuration
+  loss: 'l1'              # Options: 'l1', 'l2', 'huber'
+  mix_loss_coef: 0.0      # Coefficient for mixture consistency loss
+  
+  # Optimizer Configuration
+  optimizer: 'adamw'
+  lr: 0.0003              # Slightly higher LR often works well with CMX
+  weight_decay: 0.01
+  
+  # Learning Rate Scheduler
+  scheduler: 'cosine'
+  warmup_steps: 1000
+  min_lr: 1.0e-6
+  
+  # Evaluation
+  valid_every_n_epoch: 5
+  valid_batch_size: 8
+  
+  # Checkpointing
+  save_top_k: 5
+  early_stopping_patience: 50
+
+# Dataset Configuration
+data:
+  train_path: 'data/musdb18hq/train'
+  valid_path: 'data/musdb18hq/test'
+  
+  # Data Augmentation
+  augmentation:
+    enable: true
+    mixup_alpha: 0.4
+    cutout_prob: 0.5
+    shift_prob: 0.5
+    channel_shuffle_prob: 0.5
+
+# Inference Configuration  
+inference:
+  batch_size: 1
+  num_overlap: 4
+  overlap_factor: 0.5
+  normalize: true
+  tta: false              # Test-time augmentation
+  
+# Paths
+path:
+  pretrained_model: null
+  results_dir: 'results/mdx23c_cmx'
+  
+# Notes and Metadata
+metadata:
+  experiment_name: 'mdx23c_cmx_musdb18'
+  description: |
+    CMX-Enhanced MDX23C for MUSDB18 dataset
+    - Channel Multiplexing reduces memory by ~75%
+    - Enables 2x larger batch sizes
+    - Preserves frequency information for better separation quality
+  tags: ['mdx23c', 'cmx', 'memory-efficient', 'musdb18']
+  
+# Performance Monitoring
+monitoring:
+  log_every_n_steps: 100
+  log_audio_samples: true
+  log_spectrograms: true
+  tensorboard: true
+  wandb: false
+  
+# CMX-Specific Notes:
+# 1. With cmx_reduction=2, spatial dimensions are reduced by 75%
+# 2. This allows batch_size to increase from 8 to 16+ on same GPU
+# 3. Training speed should be similar or slightly faster
+# 4. Expected SDR improvements: +0.1 to +0.3 dB due to better freq preservation
+# 5. For 24GB GPU: try batch_size=24-32 with gradient_accumulation_steps=1
+# 6. For 12GB GPU: batch_size=8-12 should work well
+# 7. For testing: Set use_cmx=false to compare with baseline MDX23C
