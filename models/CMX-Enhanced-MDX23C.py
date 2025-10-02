@@ -9,8 +9,9 @@ while maintaining separation quality.
 Key improvements:
 1. Channel Multiplexing reduces spatial dimensions by 75% while preserving all frequency information
 2. Chessboard-like reshaping pattern redistributes data across channels efficiently  
-3. Maintains compatibility with existing TFC-TDF architecture
-4. Enables processing of higher resolution spectrograms with limited GPU memory
+3. Uses InstanceNorm (affine=True) and GELU activation as per MDX23C specifications
+4. Maintains compatibility with existing TFC-TDF architecture
+5. Enables processing of higher resolution spectrograms with limited GPU memory
 
 Author: Inspired by MARS: Audio Generation via Multi-Channel Autoregression on Spectrograms
 """
@@ -94,6 +95,7 @@ class ChannelMultiplexing:
 class ImprovedTFCTDFBlock(nn.Module):
     """
     Enhanced TFC-TDF block with Channel Multiplexing for MDX23C
+    Uses InstanceNorm and GELU as per MDX23C specifications
     """
     
     def __init__(self, num_channels, num_layers, gr, kf, kt, cmx_reduction=2):
@@ -106,24 +108,26 @@ class ImprovedTFCTDFBlock(nn.Module):
         cmx_channels = num_channels * (cmx_reduction ** 2)
         
         # TFC layers (Time-Frequency Convolution)
+        # Using InstanceNorm2d with affine=True and GELU as per MDX23C specs
         self.tfc_conv = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(cmx_channels if i == 0 else gr, gr, (kf, kt), 
                          padding=(kf//2, kt//2)),
-                nn.BatchNorm2d(gr),
-                nn.ReLU()
+                nn.InstanceNorm2d(gr, affine=True),
+                nn.GELU()
             ) for i in range(num_layers)
         ])
         
         # TDF layers (Time-Distributed Fully-connected)
+        # Using InstanceNorm1d with affine=True and GELU
         self.tdf_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(gr, gr//4),
-                nn.BatchNorm1d(gr//4),
-                nn.ReLU(),
+                nn.InstanceNorm1d(gr//4, affine=True),
+                nn.GELU(),
                 nn.Linear(gr//4, gr),
-                nn.BatchNorm1d(gr),
-                nn.ReLU()
+                nn.InstanceNorm1d(gr, affine=True),
+                nn.GELU()
             ) for _ in range(num_layers)
         ])
         
@@ -318,8 +322,9 @@ if __name__ == "__main__":
     print(f"Trainable parameters: {trainable_params:,}")
     
     print("\n=== Implementation Notes ===")
-    print("1. Replace existing cac2cws/cws2cac functions with this CMX implementation")
-    print("2. Integrate into MDX23C by modifying TFC-TDF blocks")
-    print("3. Adjust training hyperparameters for reduced spatial dimensions")
-    print("4. Benefits: 75% memory reduction, preserved frequency information")
-    print("5. Trade-off: Slight increase in channels, minor computational overhead")
+    print("1. Uses InstanceNorm (affine=True) + GELU per MDX23C specifications")
+    print("2. Replace existing cac2cws/cws2cac functions with this CMX implementation")
+    print("3. Integrate into MDX23C by modifying TFC-TDF blocks")
+    print("4. Adjust training hyperparameters for reduced spatial dimensions")
+    print("5. Benefits: 75% memory reduction, preserved frequency information")
+    print("6. Trade-off: Slight increase in channels, minor computational overhead")
