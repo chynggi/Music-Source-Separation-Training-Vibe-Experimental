@@ -499,7 +499,7 @@ def load_not_compatible_weights(model: torch.nn.Module, old_model: dict, verbose
             if should_print:
                 print(f'Match not found for {el}!')
     model.load_state_dict(
-        new_model
+        new_model, strict=False
     )
 
 
@@ -523,7 +523,7 @@ def load_lora_weights(model: torch.nn.Module, lora_path: str, device: str = 'cpu
     None
         The model is updated in place.
     """
-    lora_state_dict = torch.load(lora_path, map_location=device)
+    lora_state_dict = torch.load(lora_path, map_location=device, weights_only=False)
     model.load_state_dict(lora_state_dict, strict=False)
 
 
@@ -577,7 +577,7 @@ def load_start_checkpoint(args: argparse.Namespace,
         if not args.load_only_compatible_weights:
             load_not_compatible_weights(model, old_model, verbose=False)
         else:
-            model.load_state_dict(torch.load(args.start_check_point))
+            model.load_state_dict(torch.load(args.start_check_point, weights_only=False), strict=False)
     else:
         device = 'cpu'
         if args.model_type in ['htdemucs', 'apollo']:
@@ -598,7 +598,7 @@ def load_start_checkpoint(args: argparse.Namespace,
             if 'model_state_dict' in old_model:
                 # Fix for full_check_point
                 old_model = old_model['model_state_dict']
-        model.load_state_dict(old_model)
+        model.load_state_dict(old_model, strict=False)
 
     if args.lora_checkpoint_loralib:
         if should_print:
