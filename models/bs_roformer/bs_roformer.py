@@ -10,6 +10,10 @@ try:
     from models.bs_roformer.attend_sage import Attend as AttendSage
 except:
     pass
+try:
+    from neuralop.models import FNO1d
+except:
+    FNO1d = None
 from torch.utils.checkpoint import checkpoint
 
 from beartype.typing import Tuple, Optional, List, Callable
@@ -352,20 +356,28 @@ class MaskEstimator(Module):
             dim,
             dim_inputs: Tuple[int, ...],
             depth,
-            mlp_expansion_factor=4
+            mlp_expansion_factor=4,
+            use_fno=False
     ):
         super().__init__()
         self.dim_inputs = dim_inputs
         self.to_freqs = ModuleList([])
+        self.use_fno = use_fno
         dim_hidden = dim * mlp_expansion_factor
 
         for dim_in in dim_inputs:
             net = []
 
-            mlp = nn.Sequential(
-                MLP(dim, dim_in * 2, dim_hidden=dim_hidden, depth=depth),
-                nn.GLU(dim=-1)
-            )
+            if self.use_fno and FNO1d is not None:
+                mlp = nn.Sequential(
+                    FNO1d(n_modes_height=64, hidden_channels=dim, in_channels=dim, out_channels=dim_in*2, lifting_channels=dim, projection_channels=dim, n_layers=3, separable=True),
+                    nn.GLU(dim=-2)
+                )
+            else:
+                mlp = nn.Sequential(
+                    MLP(dim, dim_in * 2, dim_hidden=dim_hidden, depth=depth),
+                    nn.GLU(dim=-1)
+                )
 
             self.to_freqs.append(mlp)
 
@@ -375,7 +387,13 @@ class MaskEstimator(Module):
         outs = []
 
         for band_features, mlp in zip(x, self.to_freqs):
-            freq_out = mlp(band_features)
+            if self.use_fno:
+                band_features = rearrange(band_features, 'b t c -> b c t')
+                with torch.autocast(device_type='cuda', enabled=False, dtype=torch.float32):
+                    freq_out = mlp(band_features).float()
+                freq_out = rearrange(freq_out, 'b c t -> b t c')
+            else:
+                freq_out = mlp(band_features)
             outs.append(freq_out)
 
         return torch.cat(outs, dim=-1)
@@ -519,12 +537,21 @@ class BSRoformer(Module):
 
         self.mask_estimators = nn.ModuleList([])
 
+        # Check if 'FNO' is in the filename by inspecting the call stack
+        import inspect
+        use_fno = False
+        for frame_info in inspect.stack():
+            if 'FNO' in frame_info.filename.upper():
+                use_fno = True
+                break
+
         for _ in range(num_stems):
             mask_estimator = MaskEstimator(
                 dim=dim,
                 dim_inputs=freqs_per_bands_with_complex,
                 depth=mask_estimator_depth,
                 mlp_expansion_factor=mlp_expansion_factor,
+                use_fno=use_fno,
             )
 
             self.mask_estimators.append(mask_estimator)
