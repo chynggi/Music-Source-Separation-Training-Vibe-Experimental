@@ -1,0 +1,57 @@
+audio:
+  chunk_size: 132300  # samplerate * segment
+  hop_length: 1024
+  min_mean_abs: 0.0
+
+training:
+  batch_size: 8
+  gradient_accumulation_steps: 1
+  grad_clip: 0
+  segment: 11
+  shift: 1
+  samplerate: 44100
+  channels: 2
+  normalize: true
+  instruments: ['drums', 'bass', 'other', 'vocals']
+  target_instrument: null
+  num_epochs: 1000
+  num_steps: 1000
+  optimizer: prodigy
+  lr: 1.0
+  patience: 2
+  reduce_factor: 0.95
+  q: 0.95
+  coarse_loss_clip: true
+  ema_momentum: 0.999
+  read_metadata_procs: 8
+  other_fix: false
+  use_amp: true
+
+model:
+  input_channels: 2
+  output_channels: 2
+  num_sources: 4
+  window_size: 512
+  hop_size: 110
+  subbands_num: 4
+
+augmentations:
+  enable: true
+  loudness: true
+  loudness_min: 0.5
+  loudness_max: 1.5
+  mixup: true
+  mixup_probs:
+    !!python/tuple
+    - 0.2
+    - 0.02
+  mixup_loudness_min: 0.5
+  mixup_loudness_max: 1.5
+  all:
+    channel_shuffle: 0.5
+    random_inverse: 0.1
+    random_polarity: 0.5
+
+inference:
+  num_overlap: 2
+  batch_size: 8

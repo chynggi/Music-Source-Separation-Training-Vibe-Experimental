@@ -1,5 +1,6 @@
 torch>=2.0.1
 torchaudio
+torchlibrosa
 numpy
 pandas
 scipy
