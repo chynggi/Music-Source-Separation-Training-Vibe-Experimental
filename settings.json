@@ -7,11 +7,17 @@
   "valid_paths": "",
   "num_workers": "4",
   "device_ids": "0",
-  "infer_model_type": "bs_roformer",
-  "infer_config_path": "O:\\THNG\\bsrofo_fno.yaml",
-  "infer_start_checkpoint": "O:\\THNG\\bs_roformer_fno.ckpt",
-  "infer_input_folder": "O:\\GDrive_Sync_Alt\\input",
-  "infer_store_dir": "D:\\FNO",
+  "infer_model_type": "apollo",
+  "infer_config_path": "O:\\THNG\\Apollo_baicai1145\\config_apollo_vocals_ep_54.yaml",
+  "infer_start_checkpoint": "O:\\THNG\\Apollo_baicai1145\\model_apollo_vocals_ep_54.ckpt",
+  "infer_input_folder": "O:\\Resv2\\inference\\Apollo\\input",
+  "infer_store_dir": "O:\\Resv2\\inference\\Apollo\\output",
   "extract_instrumental": true,
-  "saved_combinations": {}
+  "saved_combinations": {
+    "Apollo_baicai1145": {
+      "model_type": "apollo",
+      "config_path": "O:\\THNG\\Apollo_baicai1145\\config_apollo_vocals_ep_54.yaml",
+      "checkpoint": "O:\\THNG\\Apollo_baicai1145\\model_apollo_vocals_ep_54.ckpt"
+    }
+  }
 }
