@@ -24,7 +24,7 @@ training:
   coarse_loss_clip: true
   ema_momentum: 0.999
   read_metadata_procs: 8
-  other_fix: false
+  other_fix: true
   use_amp: true
   lambda_time: 10.0
 
