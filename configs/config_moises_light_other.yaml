@@ -9,6 +9,7 @@ audio:
   win_length: 4096
   center: true
   pad_mode: reflect
+  min_mean_abs: 0.001
 
 model:
   type: moises_light
