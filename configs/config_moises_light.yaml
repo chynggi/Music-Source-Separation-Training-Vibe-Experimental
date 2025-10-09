@@ -1,0 +1,55 @@
+model:
+  type: moises_light
+  args:
+    n_bands: 4
+    n_enc: 3
+    n_dec: 1
+    n_rope: 5
+    n_split_enc: 3
+    n_split_dec: 1
+    g: 48
+    dropout: 0.1
+    num_stems: 1
+    audio_channels: 2
+    n_fft: 4096
+    hop_length: 1024
+    win_length: 4096
+    mask_activation: sigmoid
+
+training:
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  grad_clip: null
+  lr: 0.0005
+  optimizer: adamw
+  scheduler: ReduceLROnPlateau
+  max_epochs: 1000
+  patience: 50
+  reduce_factor: 0.5
+  loss_function: multi_resolution_mae
+  window_sizes:
+    - 4096
+    - 2048
+    - 1024
+    - 512
+    - 256
+  hop_size: 147
+  normalize: true
+  augmentation:
+    mixup: true
+    channel_shuffle: true
+    time_masking: true
+    freq_masking: true
+
+data:
+  segment_length: 9.0
+  hop_length: 1024
+  n_fft: 4096
+  win_length: 4096
+  sample_rate: 44100
+  channels: 2
+
+inference:
+  overlap_add: true
+  overlap_ratio: 0.25
+  batch_size: 1

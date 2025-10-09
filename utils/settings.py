@@ -348,6 +348,9 @@ def get_model_from_config(model_type: str, config_path: str) -> Tuple[nn.Module,
     elif model_type == 'bs_subband_resunet':
         from models.bs_subband_resunet import BandSplitSubbandResUNet
         model = BandSplitSubbandResUNet(**dict(config.model))
+    elif model_type == 'moises_light':
+        from models.moises_light import MoisesLight
+        model = MoisesLight(**dict(config.model.args))
     elif model_type == 'experimental_mdx23c_stht':
         from models.mdx23c_tfc_tdf_v3_with_STHT import TFC_TDF_net
         model = TFC_TDF_net(config)
