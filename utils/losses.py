@@ -1,12 +1,75 @@
 import argparse
-from typing import Any, Optional, Callable, Union
+from typing import Any, Optional, Callable, Union, List
 
 import auraloss
-import torch.nn.functional as F
 import torch
+import torch.nn.functional as F
 from ml_collections import ConfigDict
 from torch import nn
 from torch_log_wmse import LogWMSE
+
+
+_BSMAMBA2_WINDOW_CACHE: dict[tuple[int, torch.device, torch.dtype], torch.Tensor] = {}
+
+
+def _bsmamba2_get_window(n_fft: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    key = (n_fft, device, dtype)
+    if key not in _BSMAMBA2_WINDOW_CACHE:
+        window = torch.hann_window(n_fft, device=device, dtype=torch.float32)
+        _BSMAMBA2_WINDOW_CACHE[key] = window.to(dtype=dtype)
+    return _BSMAMBA2_WINDOW_CACHE[key]
+
+
+def _bsmamba2_stft_l1(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    n_fft: int,
+    hop_length: int,
+) -> torch.Tensor:
+    batch, channels, samples = pred.shape
+    pred_flat = pred.reshape(batch * channels, samples)
+    target_flat = target.reshape(batch * channels, samples)
+
+    window = _bsmamba2_get_window(n_fft, pred.device, pred.dtype)
+
+    pred_stft = torch.stft(
+        pred_flat,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        window=window,
+        center=False,
+        return_complex=True,
+    )
+    target_stft = torch.stft(
+        target_flat,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        window=window,
+        center=False,
+        return_complex=True,
+    )
+
+    loss = F.l1_loss(torch.abs(pred_stft), torch.abs(target_stft))
+    return loss
+
+
+def bsmamba2_loss(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    lambda_time: float = 10.0,
+    fft_sizes: Optional[List[int]] = None,
+    stft_hop: int = 147,
+) -> torch.Tensor:
+    if fft_sizes is None:
+        fft_sizes = [4096, 2048, 1024, 512, 256]
+
+    time_loss = F.l1_loss(pred, target)
+    spec_loss = pred.new_tensor(0.0)
+
+    for n_fft in fft_sizes:
+        spec_loss = spec_loss + _bsmamba2_stft_l1(pred, target, n_fft, stft_hop)
+
+    return lambda_time * time_loss + spec_loss
 
 
 def _get_config_value(section: Any, key: str, default: Any) -> Any:
@@ -278,6 +341,22 @@ def choice_loss(
         loss_fns.append(
             lambda y_pred, y_true, x=None: multistft_loss(y_pred, y_true, stft_loss)
                                            * args.multistft_loss_coef
+        )
+
+    if 'bsmamba2_loss' in args.loss:
+        loss_section = getattr(config, 'loss', None)
+        lambda_time = _get_config_value(config.training, 'lambda_time', 10.0)
+        fft_sizes = _get_config_value(loss_section, 'stft_windows', [4096, 2048, 1024, 512, 256])
+        stft_hop = _get_config_value(loss_section, 'stft_hop', 147)
+
+        loss_fns.append(
+            lambda y_pred, y_true, x=None: bsmamba2_loss(
+                y_pred,
+                y_true,
+                lambda_time=lambda_time,
+                fft_sizes=fft_sizes,
+                stft_hop=stft_hop,
+            )
         )
 
     if 'log_wmse_loss' in args.loss:
