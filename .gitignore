@@ -1,5 +1,7 @@
 __pycache__
 .DS_Store
+.vscode/
+.github/
 *.py[cod]
 *$py.class
 
