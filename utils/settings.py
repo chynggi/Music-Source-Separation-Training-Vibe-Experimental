@@ -33,7 +33,7 @@ def parse_args_train(dict_args: Union[argparse.Namespace, Dict, None]) -> argpar
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer, bs_roformer, bs_rnn, swin_upernet, bandit, musicldm")
+                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer, bs_roformer, bs_rnn, swin_upernet, bandit, musicldm, mamba2_meets_silence")
     parser.add_argument("--config_path", type=str, help="path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint to start training")
     parser.add_argument("--load_optimizer", action='store_true',
@@ -60,7 +60,7 @@ def parse_args_train(dict_args: Union[argparse.Namespace, Dict, None]) -> argpar
     parser.add_argument("--device_ids", nargs='+', type=int, default=[0], help='list of gpu ids')
     parser.add_argument("--loss", type=str, nargs='+', choices=['masked_loss', 'mse_loss', 'l1_loss',
                                                                 'multistft_loss', 'spec_masked_loss', 'spec_rmse_loss',
-                                                                'log_wmse_loss'],
+                                                                'log_wmse_loss', 'bsmamba2_loss'],
                         default=['masked_loss'], help="List of loss functions to use")
     parser.add_argument("--masked_loss_coef", type=float, default=1., help="Coef for loss")
     parser.add_argument("--mse_loss_coef", type=float, default=1., help="Coef for loss")
@@ -134,8 +134,8 @@ def parse_args_valid(dict_args: Union[Dict, None]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of mdx23c, htdemucs, segm_models, mel_band_roformer,"
-                             " bs_roformer, bs_rnn, swin_upernet, bandit")
+                    help="One of mdx23c, htdemucs, segm_models, mel_band_roformer," 
+                        " bs_roformer, bs_rnn, swin_upernet, bandit, mamba2_meets_silence")
     parser.add_argument("--config_path", type=str, help="Path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint"
                                                                           " to valid weights")
@@ -188,8 +188,8 @@ def parse_args_inference(dict_args: Union[Dict, None]) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_type", type=str, default='mdx23c',
-                        help="One of bandit, bandit_v2, bs_roformer, bs_rnn, htdemucs, mdx23c, mel_band_roformer,"
-                             " scnet, scnet_unofficial, segm_models, swin_upernet, torchseg")
+                    help="One of bandit, bandit_v2, bs_roformer, bs_rnn, htdemucs, mdx23c, mel_band_roformer," 
+                        " scnet, scnet_unofficial, segm_models, swin_upernet, torchseg, mamba2_meets_silence")
     parser.add_argument("--config_path", type=str, help="path to config file")
     parser.add_argument("--start_check_point", type=str, default='', help="Initial checkpoint to valid weights")
     parser.add_argument("--input_folder", type=str, help="folder with mixtures to process")
@@ -369,6 +369,9 @@ def get_model_from_config(model_type: str, config_path: str) -> Tuple[nn.Module,
     elif model_type == 'bs_rnn':
         from models.bs_rnn import BandSplitRNNSeparator
         model = BandSplitRNNSeparator(**dict(config.model))
+    elif model_type == 'mamba2_meets_silence':
+        from models.mamba2_meets_silence import Mamba2MeetsSilence
+        model = Mamba2MeetsSilence(**dict(config.model))
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 

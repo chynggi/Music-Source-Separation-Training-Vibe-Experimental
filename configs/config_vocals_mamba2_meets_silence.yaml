@@ -1,0 +1,54 @@
+audio:
+  chunk_size: 352800  # 8 seconds at 44.1 kHz
+  hop_length: 441
+  min_mean_abs: 0.0
+
+training:
+  batch_size: 5
+  gradient_accumulation_steps: 6
+  grad_clip: 0
+  segment: 8
+  shift: 1
+  samplerate: 44100
+  channels: 2
+  normalize: false
+  instruments: ['vocals', 'other']
+  target_instrument: 'vocals'
+  num_epochs: 1000
+  num_steps: 1000
+  optimizer: adamw
+  lr: 0.0005
+  patience: 5
+  reduce_factor: 0.5
+  q: 0.95
+  coarse_loss_clip: true
+  ema_momentum: 0.999
+  read_metadata_procs: 8
+  other_fix: false
+  use_amp: true
+  lambda_time: 10.0
+
+model:
+  sample_rate: 44100
+  n_fft: 2048
+  hop_length: 441
+  num_subbands: 62
+  hidden_dim: 256
+  num_layers: 6
+  d_state: 64
+  d_conv: 4
+  dropout: 0.0
+  num_sources: 1
+  use_gradient_checkpointing: true
+
+loss:
+  stft_windows: [4096, 2048, 1024, 512, 256]
+  stft_hop: 147
+
+augmentations:
+  enable: false
+
+inference:
+  num_overlap: 2
+  batch_size: 4
+  chunk_size: 352800
