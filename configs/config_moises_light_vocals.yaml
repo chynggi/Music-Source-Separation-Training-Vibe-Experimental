@@ -21,7 +21,7 @@ model:
     n_split_dec: 1
     g: 48
     dropout: 0.1
-    num_stems: 4
+    num_stems: 1
     audio_channels: 2
     n_fft: 4096
     hop_length: 1024
@@ -34,10 +34,8 @@ training:
   grad_clip: null
   instruments:
     - vocals
-    - drums
-    - bass
     - other
-  target_instrument: null
+  target_instrument: vocals
   lr: 5.0e-04
   optimizer: adamw
   scheduler: ReduceLROnPlateau
