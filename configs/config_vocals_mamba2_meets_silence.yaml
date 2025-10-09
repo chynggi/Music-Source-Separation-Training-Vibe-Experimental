@@ -4,10 +4,10 @@ audio:
   min_mean_abs: 0.0
 
 training:
-  batch_size: 5
-  gradient_accumulation_steps: 6
+  batch_size: 1
+  gradient_accumulation_steps: 1
   grad_clip: 0
-  segment: 8
+  segment: 4
   shift: 1
   samplerate: 44100
   channels: 2
@@ -33,13 +33,13 @@ model:
   n_fft: 2048
   hop_length: 441
   num_subbands: 62
-  hidden_dim: 256
-  num_layers: 6
+  hidden_dim: 192
+  num_layers: 4
   d_state: 64
   d_conv: 4
   dropout: 0.0
   num_sources: 1
-  use_gradient_checkpointing: true
+  use_gradient_checkpointing: false
 
 loss:
   stft_windows: [4096, 2048, 1024, 512, 256]
