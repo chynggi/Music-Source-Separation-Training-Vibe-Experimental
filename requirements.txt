@@ -33,11 +33,7 @@ prodigyopt
 torch_log_wmse
 loralib
 pyaudio
-wxpython==4.2.2
 keyboard
 matplotlib
 hyper_connections==0.1.11
 sageattention==1.0.6
-
-causal-conv1d
-mamba-ssm
