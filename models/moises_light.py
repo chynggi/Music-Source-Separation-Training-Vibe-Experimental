@@ -7,7 +7,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from models.modules import EfficientBandSplit, RoPETransformer, TFCTDFBlock
+from models.modules import EfficientBandSplit, MultiBandMaskEstimator, RoPETransformer, TFCTDFBlock
 
 
 class ComplexSTFT(nn.Module):
@@ -24,6 +24,8 @@ class ComplexSTFT(nn.Module):
     ) -> None:
         super().__init__()
         win_length = win_length or n_fft
+        if win_length > n_fft:
+            win_length = n_fft
         if window == "hann":
             win = torch.hann_window(win_length)
         else:
@@ -33,6 +35,7 @@ class ComplexSTFT(nn.Module):
         self.hop_length = hop_length
         self.win_length = win_length
         self.center = center
+        self.expected_freq = self.n_fft // 2 + 1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, channels, length = x.shape
@@ -68,7 +71,7 @@ class ComplexSTFT(nn.Module):
         spec_complex = torch.view_as_complex(spec.contiguous())
         spec_complex = spec_complex.view(batch * channels, freq, frames)
         # window is already registered as buffer, just ensure dtype matches
-        window = self.window.to(dtype=spec_complex.dtype)
+        window = self.window.to(device=spec_complex.device)
         audio = torch.istft(
             spec_complex,
             n_fft=self.n_fft,
@@ -97,6 +100,8 @@ class MoisesLightConfig:
     n_fft: int = 4096
     hop_length: int = 1024
     win_length: int | None = None
+    crop_freq_bins: int | None = None
+    center: bool = True
     mask_activation: str = "sigmoid"
 
 
@@ -156,7 +161,7 @@ class MoisesLight(nn.Module):
         cfg = self.config
 
         self.spec_channels = cfg.audio_channels * 2
-        self.stft = ComplexSTFT(cfg.n_fft, cfg.hop_length, cfg.win_length)
+        self.stft = ComplexSTFT(cfg.n_fft, cfg.hop_length, cfg.win_length, center=cfg.center)
         self.input_proj = nn.Conv2d(self.spec_channels, cfg.g, kernel_size=1)
 
         norm = _norm_factory()
@@ -216,12 +221,20 @@ class MoisesLight(nn.Module):
                 for _ in range(cfg.n_split_dec)
             ]
         )
-        self.output_proj = nn.Conv2d(current_channels, cfg.num_stems * self.spec_channels, kernel_size=1)
+        self.mask_head = MultiBandMaskEstimator(
+            current_channels,
+            cfg.num_stems * self.spec_channels,
+            n_bands=cfg.n_bands,
+            dropout=cfg.dropout,
+        )
         self.mask_activation = torch.sigmoid if cfg.mask_activation == "sigmoid" else torch.tanh
 
         total_scale = 2 ** (cfg.n_enc - 1) if cfg.n_enc > 1 else 1
-        self.freq_multiple = total_scale
+        self.freq_multiple = total_scale * max(1, cfg.n_bands)
         self.time_multiple = total_scale
+        self.crop_freq_bins = cfg.crop_freq_bins
+        if self.crop_freq_bins is not None and self.crop_freq_bins <= 0:
+            raise ValueError("crop_freq_bins must be positive when provided")
         
         # Initialize weights properly to prevent gradient issues
         self._initialize_weights()
@@ -256,10 +269,10 @@ class MoisesLight(nn.Module):
                     nn.init.constant_(m.bias, 0)
         
         # Special initialization for output projection to prevent extreme mask values
-        if hasattr(self, 'output_proj'):
-            nn.init.xavier_uniform_(self.output_proj.weight, gain=0.001)
-            if self.output_proj.bias is not None:
-                nn.init.constant_(self.output_proj.bias, 0)
+        if hasattr(self, "mask_head") and isinstance(self.mask_head, MultiBandMaskEstimator):
+            nn.init.xavier_uniform_(self.mask_head.mask_proj.weight, gain=0.001)
+            if self.mask_head.mask_proj.bias is not None:
+                nn.init.constant_(self.mask_head.mask_proj.bias, 0)
 
     def forward(self, mixture: torch.Tensor) -> torch.Tensor:
         if mixture.dim() != 3:
@@ -271,6 +284,9 @@ class MoisesLight(nn.Module):
             raise ValueError("Input contains NaN or Inf values")
         
         spec = self.stft(mixture)
+        if self.crop_freq_bins is not None:
+            freq_limit = min(self.crop_freq_bins, spec.shape[-2])
+            spec = spec[..., :freq_limit, :]
         original_freq, original_time = spec.shape[-2:]
         spec_padded, _, _ = self._pad_spec(spec)
         
@@ -306,7 +322,7 @@ class MoisesLight(nn.Module):
         for module in self.band_splits_dec:
             feats = module(feats)
 
-        mask = self.output_proj(feats)
+        mask = self.mask_head(feats)
         mask = self.mask_activation(mask)
         
         # Ensure mask and spec have matching dimensions
