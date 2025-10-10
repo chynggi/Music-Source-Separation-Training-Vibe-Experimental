@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Callable
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -75,3 +79,47 @@ class EfficientBandSplit(nn.Module):
             f"in_channels={self.in_channels}, out_channels={self.out_channels}, "
             f"n_bands={self.n_bands}, kernel_size={self.kernel_size}, dropout={self.dropout}"
         )
+
+
+class MultiBandMaskEstimator(nn.Module):
+    """Estimate spectrogram masks by aggregating per-band refinements."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        mask_channels: int,
+        *,
+        n_bands: int = 4,
+        dropout: float = 0.0,
+    activation: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    ) -> None:
+        super().__init__()
+        if in_channels <= 0 or mask_channels <= 0:
+            raise ValueError("in_channels and mask_channels must be positive")
+        if n_bands <= 0:
+            raise ValueError("n_bands must be positive")
+
+        self.n_bands = n_bands
+        self.activation = activation
+
+        self.band_split = EfficientBandSplit(
+            in_channels,
+            in_channels,
+            n_bands=n_bands,
+            dropout=dropout,
+        )
+        self.refine = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(in_channels),
+            nn.GELU(),
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+        )
+        self.mask_proj = nn.Conv2d(in_channels, mask_channels, kernel_size=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        feats = self.band_split(x)
+        feats = self.refine(feats)
+        mask = self.mask_proj(feats)
+        if self.activation is not None:
+            mask = self.activation(mask)
+        return mask
