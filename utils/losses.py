@@ -10,6 +10,7 @@ from torch_log_wmse import LogWMSE
 
 
 _BSMAMBA2_WINDOW_CACHE: dict[tuple[int, torch.device, torch.dtype], torch.Tensor] = {}
+_MRMAE_WINDOW_CACHE: dict[tuple[int, int, torch.device, torch.dtype], torch.Tensor] = {}
 
 
 def _bsmamba2_get_window(n_fft: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
@@ -18,6 +19,14 @@ def _bsmamba2_get_window(n_fft: int, device: torch.device, dtype: torch.dtype) -
         window = torch.hann_window(n_fft, device=device, dtype=torch.float32)
         _BSMAMBA2_WINDOW_CACHE[key] = window.to(dtype=dtype)
     return _BSMAMBA2_WINDOW_CACHE[key]
+
+
+def _mrmae_get_window(win_length: int, n_fft: int, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    key = (win_length, n_fft, device, dtype)
+    if key not in _MRMAE_WINDOW_CACHE:
+        window = torch.hann_window(win_length, device=device, dtype=torch.float32)
+        _MRMAE_WINDOW_CACHE[key] = window.to(dtype=dtype)
+    return _MRMAE_WINDOW_CACHE[key]
 
 
 def _bsmamba2_stft_l1(
@@ -70,6 +79,65 @@ def bsmamba2_loss(
         spec_loss = spec_loss + _bsmamba2_stft_l1(pred, target, n_fft, stft_hop)
 
     return lambda_time * time_loss + spec_loss
+
+
+class MultiResolutionMAELoss(nn.Module):
+    """Time-domain L1 combined with complex STFT MAE across multiple setups."""
+
+    def __init__(self, setups: List[dict[str, int]]) -> None:
+        super().__init__()
+        if not setups:
+            raise ValueError("MultiResolutionMAELoss requires at least one STFT setup.")
+        self.setups = setups
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        if pred.shape != target.shape:
+            raise ValueError(f"pred shape {pred.shape} must match target shape {target.shape}.")
+
+        loss = F.l1_loss(pred, target)
+
+        if pred.ndim < 2:
+            raise ValueError("Expected at least 2D tensors with time dimension at the end.")
+
+        pred_view = pred.reshape(-1, pred.shape[-1])
+        target_view = target.reshape(-1, target.shape[-1])
+
+        for cfg in self.setups:
+            n_fft = cfg.get("n_fft")
+            hop_length = cfg.get("hop_length")
+            win_length = cfg.get("win_length")
+
+            if n_fft is None or hop_length is None or win_length is None:
+                raise ValueError(f"Invalid STFT setup: {cfg}.")
+
+            fft_length = max(int(n_fft), int(win_length))
+            hop_length = int(hop_length)
+            win_length = int(win_length)
+
+            window = _mrmae_get_window(win_length, fft_length, pred.device, pred.dtype)
+
+            spec_pred = torch.stft(
+                pred_view,
+                n_fft=fft_length,
+                hop_length=hop_length,
+                win_length=win_length,
+                window=window,
+                center=True,
+                return_complex=True,
+            )
+            spec_target = torch.stft(
+                target_view,
+                n_fft=fft_length,
+                hop_length=hop_length,
+                win_length=win_length,
+                window=window,
+                center=True,
+                return_complex=True,
+            )
+
+            loss = loss + F.l1_loss(torch.view_as_real(spec_pred), torch.view_as_real(spec_target))
+
+        return loss
 
 
 def _get_config_value(section: Any, key: str, default: Any) -> Any:
@@ -398,6 +466,34 @@ def choice_loss(
                                                             q=quantile,
                                                             coarse=coarse_mask)
                                            * args.spec_masked_loss_coef
+        )
+
+    multi_res_enabled = (
+        'multi_resolution_mae_loss' in args.loss or
+        'multi_resolution_mae' in args.loss or
+        getattr(args, 'loss_function', None) == 'multi_resolution_mae'
+    )
+
+    if multi_res_enabled:
+        default_setups = [
+            {'n_fft': 4096, 'win_length': 6144, 'hop_length': 1024},
+            {'n_fft': 3072, 'win_length': 4096, 'hop_length': 768},
+            {'n_fft': 2048, 'win_length': 3072, 'hop_length': 512},
+        ]
+        setups = _get_config_value(training_cfg, 'stft_setups', default_setups)
+        normalized_setups: List[dict[str, int]] = []
+        for item in setups:
+            if isinstance(item, ConfigDict):
+                normalized_setups.append({str(k): int(item[k]) for k in item})
+            else:
+                as_dict = dict(item)
+                normalized_setups.append({str(k): int(as_dict[k]) for k in as_dict})
+        setups = normalized_setups
+        mr_loss = MultiResolutionMAELoss(setups)
+        mr_coef = getattr(args, 'multi_resolution_mae_loss_coef', 1.0)
+        loss_fns.append(
+            lambda y_pred, y_true, x=None, mr_loss=mr_loss, mr_coef=mr_coef:
+            mr_loss(y_pred, y_true) * mr_coef
         )
 
     def multi_loss(y_pred: Any, y_true: Any, x: Optional[Any] = None) -> torch.Tensor:
