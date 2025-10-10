@@ -31,8 +31,8 @@ model:
     center: true
 
 training:
-  batch_size: 8
-  gradient_accumulation_steps: 4
+  batch_size: 1
+  gradient_accumulation_steps: 1
   grad_clip: null
   instruments:
     - vocals
