@@ -33,7 +33,6 @@ class ComplexSTFT(nn.Module):
         self.hop_length = hop_length
         self.win_length = win_length
         self.center = center
-        self.freq_bins = n_fft // 2 + 1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, channels, length = x.shape
@@ -47,25 +46,29 @@ class ComplexSTFT(nn.Module):
             window=window,
             return_complex=True,
         )
-        spec = spec[..., : self.freq_bins, :]
+        # torch.stft already returns (freq_bins, time), no need to slice
         spec = torch.view_as_real(spec)
         spec = spec.permute(0, 3, 1, 2)
-        spec = spec.reshape(batch, channels, 2, self.freq_bins, -1)
-        spec = spec.reshape(batch, channels * 2, self.freq_bins, -1)
+        freq_bins = spec.shape[2]
+        spec = spec.reshape(batch, channels, 2, freq_bins, -1)
+        spec = spec.reshape(batch, channels * 2, freq_bins, -1)
         return spec
 
     def inverse(self, spec: torch.Tensor, length: int | None = None) -> torch.Tensor:
         batch, channels2, freq, frames = spec.shape
         channels = channels2 // 2
-        if freq < self.freq_bins:
-            pad = self.freq_bins - freq
+        # Pad frequency dimension if needed to match expected n_fft size
+        expected_freq = self.n_fft // 2 + 1
+        if freq < expected_freq:
+            pad = expected_freq - freq
             spec = F.pad(spec, (0, 0, 0, pad))
-            freq = self.freq_bins
+            freq = expected_freq
         spec = spec.view(batch, channels, 2, freq, frames)
         spec = spec.permute(0, 1, 3, 4, 2)
         spec_complex = torch.view_as_complex(spec.contiguous())
         spec_complex = spec_complex.view(batch * channels, freq, frames)
-        window = self.window.to(spec_complex.device, spec_complex.dtype)
+        # window is already registered as buffer, just ensure dtype matches
+        window = self.window.to(dtype=spec_complex.dtype)
         audio = torch.istft(
             spec_complex,
             n_fft=self.n_fft,
@@ -219,6 +222,9 @@ class MoisesLight(nn.Module):
         total_scale = 2 ** (cfg.n_enc - 1) if cfg.n_enc > 1 else 1
         self.freq_multiple = total_scale
         self.time_multiple = total_scale
+        
+        # Initialize weights properly to prevent gradient issues
+        self._initialize_weights()
 
     def _pad_spec(self, spec: torch.Tensor) -> Tuple[torch.Tensor, int, int]:
         _, _, freq, frames = spec.shape
@@ -234,27 +240,61 @@ class MoisesLight(nn.Module):
         if a.shape[-2] == freq and a.shape[-1] == frames:
             return a
         return F.interpolate(a, size=(freq, frames), mode="bilinear", align_corners=False)
+    
+    def _initialize_weights(self) -> None:
+        """Initialize weights to prevent gradient issues and NaN values."""
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
+                # Use Xavier/Glorot initialization for better gradient flow
+                nn.init.xavier_uniform_(m.weight, gain=0.01)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm2d, nn.LayerNorm, nn.GroupNorm)):
+                if hasattr(m, 'weight') and m.weight is not None:
+                    nn.init.constant_(m.weight, 1)
+                if hasattr(m, 'bias') and m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+        
+        # Special initialization for output projection to prevent extreme mask values
+        if hasattr(self, 'output_proj'):
+            nn.init.xavier_uniform_(self.output_proj.weight, gain=0.001)
+            if self.output_proj.bias is not None:
+                nn.init.constant_(self.output_proj.bias, 0)
 
     def forward(self, mixture: torch.Tensor) -> torch.Tensor:
         if mixture.dim() != 3:
             raise ValueError("Input must have shape (batch, channels, time)")
         batch, _, length = mixture.shape
+        
+        # Check for NaN or Inf in input
+        if not torch.isfinite(mixture).all():
+            raise ValueError("Input contains NaN or Inf values")
+        
         spec = self.stft(mixture)
         original_freq, original_time = spec.shape[-2:]
         spec_padded, _, _ = self._pad_spec(spec)
+        
+        # Ensure spec doesn't have extreme values
+        spec_padded = torch.clamp(spec_padded, min=-1e4, max=1e4)
 
         feats = self.input_proj(spec_padded)
         for module in self.band_splits_enc:
             feats = module(feats)
+            # Prevent gradient explosion in band split layers
+            feats = torch.clamp(feats, min=-10, max=10)
 
         skips: List[torch.Tensor] = []
         for idx, stage in enumerate(self.encoder):
             feats = stage["block"](feats)
+            # Stabilize encoder outputs
+            feats = torch.clamp(feats, min=-10, max=10)
             if idx < len(self.encoder) - 1:
                 skips.append(feats)
                 feats = stage["down"](feats)
 
         feats = self.transformer(feats)
+        # Stabilize transformer output
+        feats = torch.clamp(feats, min=-10, max=10)
 
         for stage, skip in zip(self.decoder, reversed(skips)):
             feats = stage["up"](feats)
@@ -268,16 +308,32 @@ class MoisesLight(nn.Module):
 
         mask = self.output_proj(feats)
         mask = self.mask_activation(mask)
-        mask = mask[..., : original_freq, : original_time]
-
+        
+        # Ensure mask and spec have matching dimensions
+        if mask.shape[-2:] != (original_freq, original_time):
+            mask = mask[..., : original_freq, : original_time]
+        
+        # Crop the padded spec to original size
         spec_cropped = spec_padded[..., : original_freq, : original_time]
+        
+        # Reshape mask for multi-stem output
         mask = mask.view(batch, self.config.num_stems, self.spec_channels, original_freq, original_time)
+        
+        # Expand spec for all stems and apply mask
         spec_cropped = spec_cropped.unsqueeze(1).expand(-1, self.config.num_stems, -1, -1, -1)
         estimated_spec = mask * spec_cropped
+        
+        # Clamp to prevent extreme values that could cause NaN in ISTFT
+        estimated_spec = torch.clamp(estimated_spec, min=-1e4, max=1e4)
+        
         estimated_spec = estimated_spec.view(batch * self.config.num_stems, self.spec_channels, original_freq, original_time)
 
         audio = self.stft.inverse(estimated_spec, length=length)
         audio = audio.view(batch, self.config.num_stems, self.config.audio_channels, -1)
+        
+        # Additional safety: clamp audio output
+        audio = torch.clamp(audio, min=-1.0, max=1.0)
+        
         if self.config.num_stems == 1:
             audio = audio[:, 0]
         return audio
