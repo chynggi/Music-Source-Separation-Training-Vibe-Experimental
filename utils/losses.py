@@ -90,17 +90,33 @@ class MultiResolutionMAELoss(nn.Module):
             raise ValueError("MultiResolutionMAELoss requires at least one STFT setup.")
         self.setups = setups
 
+    @staticmethod
+    def _reshape_waveform(x: torch.Tensor) -> torch.Tensor:
+        if x.ndim == 4:
+            return x.reshape(x.shape[0], x.shape[1] * x.shape[2], x.shape[3])
+        if x.ndim == 3:
+            return x
+        if x.ndim == 2:
+            return x.unsqueeze(1)
+        raise ValueError(f"Unsupported waveform shape {x.shape}. Expected 2-4 dims.")
+
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        if pred.shape != target.shape:
-            raise ValueError(f"pred shape {pred.shape} must match target shape {target.shape}.")
+        pred_wave = self._reshape_waveform(pred)
+        target_wave = self._reshape_waveform(target)
 
-        loss = F.l1_loss(pred, target)
+        if pred_wave.shape != target_wave.shape:
+            raise ValueError(
+                "Flattened waveform shapes must match. "
+                f"Got pred {pred_wave.shape} and target {target_wave.shape}."
+            )
 
-        if pred.ndim < 2:
+        loss = F.l1_loss(pred_wave, target_wave)
+
+        if pred_wave.ndim < 2:
             raise ValueError("Expected at least 2D tensors with time dimension at the end.")
 
-        pred_view = pred.reshape(-1, pred.shape[-1])
-        target_view = target.reshape(-1, target.shape[-1])
+        pred_view = pred_wave.reshape(-1, pred_wave.shape[-1])
+        target_view = target_wave.reshape(-1, target_wave.shape[-1])
 
         for cfg in self.setups:
             n_fft = cfg.get("n_fft")
