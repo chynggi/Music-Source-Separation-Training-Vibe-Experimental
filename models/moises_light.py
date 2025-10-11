@@ -231,8 +231,8 @@ class MoisesLight(nn.Module):
         )
         self.mask_activation = torch.sigmoid if cfg.mask_activation == "sigmoid" else torch.tanh
 
-    total_scale = 2 ** (cfg.n_enc - 1) if cfg.n_enc > 1 else 1
-    self.freq_multiple = max(1, cfg.n_bands)
+        total_scale = 2 ** (cfg.n_enc - 1) if cfg.n_enc > 1 else 1
+        self.freq_multiple = max(1, cfg.n_bands)
         self.time_multiple = total_scale
         self.crop_freq_bins = cfg.crop_freq_bins
         if self.crop_freq_bins is not None and self.crop_freq_bins <= 0:
