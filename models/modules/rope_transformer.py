@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from .dual_path import DualPathBlock
 
@@ -73,11 +74,10 @@ class MultiHeadAttention(nn.Module):
         q = apply_rotary_pos_emb(q, cos, sin)
         k = apply_rotary_pos_emb(k, cos, sin)
 
-        attn = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.dropout(attn)
-
-        out = torch.matmul(attn, v)
+        dropout_p = self.dropout.p if self.training else 0.0
+        out = F.scaled_dot_product_attention(
+            q, k, v, dropout_p=dropout_p, is_causal=False
+        )
         out = out.permute(0, 2, 1, 3).contiguous().view(b, seq, self.d_model)
         out = self.to_out(out)
         return self.dropout(out)
