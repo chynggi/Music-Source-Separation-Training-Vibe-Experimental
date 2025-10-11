@@ -47,18 +47,20 @@ class _TDFBlock(nn.Module):
         self.linear2: nn.Module | None = None
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
-    def _build(self, freq_bins: int) -> None:
+    def _build(self, freq_bins: int, *, device: torch.device, dtype: torch.dtype) -> None:
         hidden = max(1, int(freq_bins * self.expansion))
         self.linear1 = nn.Linear(freq_bins, hidden, bias=False)
         self.linear2 = nn.Linear(hidden, freq_bins, bias=False)
         nn.init.xavier_uniform_(self.linear1.weight)
         nn.init.xavier_uniform_(self.linear2.weight)
+        self.linear1.to(device=device, dtype=dtype)
+        self.linear2.to(device=device, dtype=dtype)
         self._freq_bins = freq_bins
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, c, f, t = x.shape
-        if self._freq_bins != f:
-            self._build(f)
+        if self._freq_bins != f or self.linear1 is None or self.linear2 is None:
+            self._build(f, device=x.device, dtype=x.dtype)
         assert self.linear1 is not None and self.linear2 is not None  # satisfy type checker
 
         y = x.permute(0, 3, 1, 2).reshape(b * t, c, f)
