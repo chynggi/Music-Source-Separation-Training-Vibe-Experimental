@@ -7,7 +7,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from models.modules import EfficientBandSplit, MultiBandMaskEstimator, RoPETransformer, TFCTDFBlock
+from models.modules import MultiBandMaskEstimator, RoPETransformer, TFCTDFBlock
 
 
 class ComplexSTFT(nn.Module):
@@ -97,10 +97,10 @@ class MoisesLightConfig:
     dropout: float = 0.1
     num_stems: int = 1
     audio_channels: int = 2
-    n_fft: int = 4096
+    n_fft: int = 6144
     hop_length: int = 1024
-    win_length: int | None = None
-    crop_freq_bins: int | None = None
+    win_length: int | None = 6144
+    crop_freq_bins: int | None = 2048
     center: bool = True
     mask_activation: str = "sigmoid"
 
@@ -128,7 +128,14 @@ class DownsampleStage(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, dropout: float) -> None:
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                stride=(1, 2),
+                padding=1,
+                bias=False,
+            ),
             _group_norm(out_channels),
             nn.GELU(),
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
@@ -142,14 +149,8 @@ class UpsampleStage(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, dropout: float) -> None:
         super().__init__()
         self.conv = nn.Sequential(
-            nn.ConvTranspose2d(
-                in_channels,
-                out_channels,
-                kernel_size=4,
-                stride=2,
-                padding=1,
-                bias=False,
-            ),
+            nn.Upsample(scale_factor=(1, 2), mode="bilinear", align_corners=False),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
             _group_norm(out_channels),
             nn.GELU(),
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
@@ -174,10 +175,6 @@ class MoisesLight(nn.Module):
         norm = _norm_factory()
         act = _act_factory()
 
-        self.band_splits_enc = nn.ModuleList(
-            [EfficientBandSplit(cfg.g, cfg.g, n_bands=cfg.n_bands, dropout=cfg.dropout) for _ in range(cfg.n_split_enc)]
-        )
-
         self.encoder: nn.ModuleList[nn.ModuleDict] = nn.ModuleList()
         in_channels = cfg.g
         encoder_channels: List[int] = []
@@ -189,6 +186,8 @@ class MoisesLight(nn.Module):
                 norm_layer=norm,
                 act_layer=act,
                 dropout=cfg.dropout,
+                n_bands=cfg.n_bands,
+                split_layers=cfg.n_split_enc,
             )
             stage = {"block": block}
             if idx < cfg.n_enc - 1:
@@ -218,16 +217,12 @@ class MoisesLight(nn.Module):
                 norm_layer=norm,
                 act_layer=act,
                 dropout=cfg.dropout,
+                n_bands=cfg.n_bands,
+                split_layers=cfg.n_split_dec,
             )
             self.decoder.append(nn.ModuleDict({"up": up, "block": block}))
             current_channels = skip_channels
 
-        self.band_splits_dec = nn.ModuleList(
-            [
-                EfficientBandSplit(current_channels, current_channels, n_bands=cfg.n_bands, dropout=cfg.dropout)
-                for _ in range(cfg.n_split_dec)
-            ]
-        )
         self.mask_head = MultiBandMaskEstimator(
             current_channels,
             cfg.num_stems * self.spec_channels,
@@ -236,8 +231,8 @@ class MoisesLight(nn.Module):
         )
         self.mask_activation = torch.sigmoid if cfg.mask_activation == "sigmoid" else torch.tanh
 
-        total_scale = 2 ** (cfg.n_enc - 1) if cfg.n_enc > 1 else 1
-        self.freq_multiple = total_scale * max(1, cfg.n_bands)
+    total_scale = 2 ** (cfg.n_enc - 1) if cfg.n_enc > 1 else 1
+    self.freq_multiple = max(1, cfg.n_bands)
         self.time_multiple = total_scale
         self.crop_freq_bins = cfg.crop_freq_bins
         if self.crop_freq_bins is not None and self.crop_freq_bins <= 0:
@@ -266,7 +261,7 @@ class MoisesLight(nn.Module):
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
                 # Use Xavier/Glorot initialization for better gradient flow
-                nn.init.xavier_uniform_(m.weight, gain=0.01)
+                nn.init.xavier_uniform_(m.weight)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, (nn.BatchNorm2d, nn.LayerNorm, nn.GroupNorm)):
@@ -301,10 +296,6 @@ class MoisesLight(nn.Module):
         spec_padded = torch.clamp(spec_padded, min=-1e4, max=1e4)
 
         feats = self.input_proj(spec_padded)
-        for module in self.band_splits_enc:
-            feats = module(feats)
-            # Prevent gradient explosion in band split layers
-            feats = torch.clamp(feats, min=-10, max=10)
 
         skips: List[torch.Tensor] = []
         for idx, stage in enumerate(self.encoder):
@@ -325,9 +316,7 @@ class MoisesLight(nn.Module):
                 feats = self._match_spatial(feats, skip.shape[-2:])
             feats = torch.cat([feats, skip], dim=1)
             feats = stage["block"](feats)
-
-        for module in self.band_splits_dec:
-            feats = module(feats)
+            feats = torch.clamp(feats, min=-10, max=10)
 
         mask = self.mask_head(feats)
         mask = self.mask_activation(mask)

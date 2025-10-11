@@ -1,9 +1,9 @@
 audio:
   chunk_size: 393216
-  dim_f: 2049
+  dim_f: 2048
   dim_t: 384
   hop_length: 1024
-  n_fft: 4096
+  n_fft: 6144
   num_channels: 2
   sample_rate: 44100
   win_length: 6144
@@ -23,7 +23,7 @@ model:
     dropout: 0.1
     num_stems: 1
     audio_channels: 2
-    n_fft: 4096
+  n_fft: 6144
     hop_length: 1024
   win_length: 6144
   crop_freq_bins: 2048
