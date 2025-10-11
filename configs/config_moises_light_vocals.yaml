@@ -39,7 +39,7 @@ training:
     - vocals
     - other
   target_instrument: vocals
-  lr: 5.0e-05
+  lr: 1.0e-05
   optimizer: adamw
   lr_scheduler:
     type: plateau_decay

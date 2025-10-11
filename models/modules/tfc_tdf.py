@@ -6,6 +6,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from .band_split import _select_groups
+
 
 class _TFCBlock(nn.Module):
     def __init__(
@@ -33,10 +35,10 @@ class _TDFBlock(nn.Module):
     def __init__(self, channels: int, dropout: float) -> None:
         super().__init__()
         self.net = nn.Sequential(
-            nn.BatchNorm1d(channels),
+            nn.GroupNorm(_select_groups(channels), channels),
             nn.GELU(),
             nn.Conv1d(channels, channels, kernel_size=1, bias=False),
-            nn.BatchNorm1d(channels),
+            nn.GroupNorm(_select_groups(channels), channels),
             nn.GELU(),
             nn.Conv1d(channels, channels, kernel_size=1, bias=False),
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),

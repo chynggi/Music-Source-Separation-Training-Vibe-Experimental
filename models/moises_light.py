@@ -117,12 +117,19 @@ def _act_factory() -> callable:
     return lambda: nn.GELU()
 
 
+def _group_norm(channels: int, max_groups: int = 8) -> nn.GroupNorm:
+    groups = min(max_groups, channels)
+    while groups > 1 and channels % groups != 0:
+        groups -= 1
+    return nn.GroupNorm(groups, channels)
+
+
 class DownsampleStage(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, dropout: float) -> None:
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
+            _group_norm(out_channels),
             nn.GELU(),
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
         )
@@ -143,7 +150,7 @@ class UpsampleStage(nn.Module):
                 padding=1,
                 bias=False,
             ),
-            nn.BatchNorm2d(out_channels),
+            _group_norm(out_channels),
             nn.GELU(),
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
         )
