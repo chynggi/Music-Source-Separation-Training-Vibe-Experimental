@@ -7,6 +7,13 @@ from torch import nn
 import torch.nn.functional as F
 
 
+def _select_groups(channels: int, max_groups: int = 8) -> int:
+    groups = min(max_groups, channels)
+    while groups > 1 and channels % groups != 0:
+        groups -= 1
+    return max(1, groups)
+
+
 class EfficientBandSplit(nn.Module):
     """Split spectrograms into independent sub-bands and process with grouped convs."""
 
@@ -41,7 +48,11 @@ class EfficientBandSplit(nn.Module):
             groups=n_bands,
             bias=bias,
         )
-        self.post_norm = nn.BatchNorm2d(out_channels) if out_channels > 1 else nn.Identity()
+        self.post_norm = (
+            nn.GroupNorm(_select_groups(out_channels), out_channels)
+            if out_channels > 1
+            else nn.Identity()
+        )
         self.post_act = nn.GELU()
         self.post_dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
@@ -110,7 +121,7 @@ class MultiBandMaskEstimator(nn.Module):
         )
         self.refine = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(in_channels),
+            nn.GroupNorm(_select_groups(in_channels), in_channels),
             nn.GELU(),
             nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
         )
@@ -123,3 +134,4 @@ class MultiBandMaskEstimator(nn.Module):
         if self.activation is not None:
             mask = self.activation(mask)
         return mask
+
