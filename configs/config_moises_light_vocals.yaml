@@ -9,6 +9,7 @@ audio:
   win_length: 6144
   center: true
   pad_mode: reflect
+  min_mean_abs: 0.001
 
 model:
   type: moises_light
@@ -38,7 +39,7 @@ training:
     - vocals
     - other
   target_instrument: vocals
-  lr: 2.0e-04
+  lr: 5.0e-05
   optimizer: adamw
   lr_scheduler:
     type: plateau_decay
@@ -46,6 +47,8 @@ training:
     factor: 0.9
   early_stopping:
     patience: 50
+  patience: 2
+  reduce_factor: 0.95
   num_epochs: 1000
   num_steps: 1000
   loss_function: multi_resolution_mae
@@ -81,5 +84,4 @@ augmentations:
 inference:
   batch_size: 1
   dim_t: 384
-  overlap_add: true
-  overlap_ratio: 0.5
+  num_overlap: 2
