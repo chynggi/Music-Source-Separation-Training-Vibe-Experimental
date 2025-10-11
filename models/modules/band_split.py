@@ -92,6 +92,61 @@ class EfficientBandSplit(nn.Module):
         )
 
 
+class SplitMergeStack(nn.Module):
+    """Stack multiple split modules with optional residual refinement."""
+
+    def __init__(
+        self,
+        channels: int,
+        *,
+        n_bands: int = 4,
+        num_layers: int = 1,
+        dropout: float = 0.0,
+        first_kernel: int = 3,
+        middle_kernel: int = 1,
+        last_kernel: int = 3,
+    ) -> None:
+        super().__init__()
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive")
+        kernels = []
+        for idx in range(num_layers):
+            if num_layers == 1:
+                kernels.append(first_kernel)
+            elif idx == 0:
+                kernels.append(first_kernel)
+            elif idx == num_layers - 1:
+                kernels.append(last_kernel)
+            else:
+                kernels.append(middle_kernel)
+
+        self.layers = nn.ModuleList(
+            [
+                EfficientBandSplit(
+                    channels,
+                    channels,
+                    n_bands=n_bands,
+                    kernel_size=kernels[idx],
+                    dropout=dropout,
+                )
+                for idx in range(num_layers)
+            ]
+        )
+        self.refine = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(_select_groups(channels), channels),
+            nn.GELU(),
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+        for layer in self.layers:
+            x = layer(x)
+        x = self.refine(x)
+        return x + residual
+
+
 class MultiBandMaskEstimator(nn.Module):
     """Estimate spectrogram masks by aggregating per-band refinements."""
 
@@ -102,7 +157,7 @@ class MultiBandMaskEstimator(nn.Module):
         *,
         n_bands: int = 4,
         dropout: float = 0.0,
-    activation: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        activation: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ) -> None:
         super().__init__()
         if in_channels <= 0 or mask_channels <= 0:

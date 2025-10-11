@@ -6,7 +6,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from .band_split import _select_groups
+from .band_split import SplitMergeStack, _select_groups
 
 
 class _TFCBlock(nn.Module):
@@ -32,22 +32,43 @@ class _TFCBlock(nn.Module):
 
 
 class _TDFBlock(nn.Module):
-    def __init__(self, channels: int, dropout: float) -> None:
+    """Frequency-global two-layer feed-forward with lazy initialization."""
+
+    def __init__(self, channels: int, dropout: float, expansion: float = 2.0) -> None:
         super().__init__()
-        self.net = nn.Sequential(
-            nn.GroupNorm(_select_groups(channels), channels),
-            nn.GELU(),
-            nn.Conv1d(channels, channels, kernel_size=1, bias=False),
-            nn.GroupNorm(_select_groups(channels), channels),
-            nn.GELU(),
-            nn.Conv1d(channels, channels, kernel_size=1, bias=False),
-            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
-        )
+        self.channels = channels
+        self.dropout = dropout
+        self.expansion = expansion
+        self.norm1 = nn.GroupNorm(_select_groups(channels), channels)
+        self.norm2 = nn.GroupNorm(_select_groups(channels), channels)
+        self.act = nn.GELU()
+        self._freq_bins: int | None = None
+        self.linear1: nn.Module | None = None
+        self.linear2: nn.Module | None = None
+        self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+
+    def _build(self, freq_bins: int) -> None:
+        hidden = max(1, int(freq_bins * self.expansion))
+        self.linear1 = nn.Linear(freq_bins, hidden, bias=False)
+        self.linear2 = nn.Linear(hidden, freq_bins, bias=False)
+        nn.init.xavier_uniform_(self.linear1.weight)
+        nn.init.xavier_uniform_(self.linear2.weight)
+        self._freq_bins = freq_bins
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, c, f, t = x.shape
+        if self._freq_bins != f:
+            self._build(f)
+        assert self.linear1 is not None and self.linear2 is not None  # satisfy type checker
+
         y = x.permute(0, 3, 1, 2).reshape(b * t, c, f)
-        y = self.net(y)
+        y = self.norm1(y)
+        y = self.act(y)
+        y = self.linear1(y)
+        y = self.act(y)
+        y = self.linear2(y)
+        y = self.norm2(y)
+        y = self.drop(y)
         y = y.reshape(b, t, c, f).permute(0, 2, 3, 1)
         return y
 
@@ -64,6 +85,8 @@ class TFCTDFBlock(nn.Module):
         norm_layer: Callable[[int], nn.Module] | None = None,
         act_layer: Callable[[], nn.Module] | None = None,
         dropout: float = 0.0,
+        n_bands: int = 4,
+        split_layers: int = 0,
     ) -> None:
         super().__init__()
         if num_layers <= 0:
@@ -79,7 +102,23 @@ class TFCTDFBlock(nn.Module):
             tfc = _TFCBlock(current_in, out_channels, norm, act, dropout)
             tdf = _TDFBlock(out_channels, dropout)
             tfc_out = _TFCBlock(out_channels, out_channels, norm, act, dropout)
-            blocks.append(nn.ModuleDict({"tfc1": tfc, "tdf": tdf, "tfc2": tfc_out}))
+            if split_layers > 0:
+                split = SplitMergeStack(
+                    out_channels,
+                    n_bands=n_bands,
+                    num_layers=split_layers,
+                    dropout=dropout,
+                )
+            else:
+                split = nn.Identity()
+            blocks.append(
+                nn.ModuleDict({
+                    "tfc1": tfc,
+                    "tdf": tdf,
+                    "split": split,
+                    "tfc2": tfc_out,
+                })
+            )
             current_in = out_channels
         self.blocks = nn.ModuleList(blocks)
         self.use_projection = in_channels != out_channels
@@ -94,6 +133,7 @@ class TFCTDFBlock(nn.Module):
             residual = x
             y = block["tfc1"](x)
             y = y + block["tdf"](y)
+            y = block["split"](y)
             y = block["tfc2"](y)
             if idx == 0 and self.use_projection:
                 residual = self.shortcut(residual)
