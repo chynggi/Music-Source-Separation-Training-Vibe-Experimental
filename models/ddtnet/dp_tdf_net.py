@@ -5,9 +5,9 @@ from .modules import TFC_TDF, TFC_TDF_Res1, TFC_TDF_Res2
 from .bandsequence import BandSequenceModelModule
 
 from .layers import (get_norm)
-from .abstract import DDTNetBase
+from .abstract import DTTNetBase
 
-class DPTDFNet(DDTNetBase):
+class DPTDFNet(DTTNetBase):
     def __init__(self, num_blocks, l, g, k, bn, bias, bn_norm, bandsequence, block_type,  **kwargs):
 
         super().__init__(**kwargs)
