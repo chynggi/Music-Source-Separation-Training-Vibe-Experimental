@@ -375,6 +375,9 @@ def get_model_from_config(model_type: str, config_path: str) -> Tuple[nn.Module,
     elif model_type == 'mamba2_meets_silence':
         from models.mamba2_meets_silence import Mamba2MeetsSilence
         model = Mamba2MeetsSilence(**dict(config.model))
+    elif model_type == 'ddtnet':
+        from models.ddtnet.dp_tdf_net import DPTDFNet
+        model = DPTDFNet(**dict(config.model))
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
