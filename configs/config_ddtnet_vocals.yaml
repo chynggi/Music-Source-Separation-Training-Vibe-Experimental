@@ -28,7 +28,7 @@ model:
     n_heads: 2
 
 training:
-  batch_size: 4
+  batch_size: 1
   gradient_accumulation_steps: 1
   grad_clip: 0.0
   instruments:
@@ -48,6 +48,6 @@ training:
   use_amp: true
 
 inference:
-  batch_size: 4
-  num_overlap: 4
+  batch_size: 1
+  num_overlap: 2
   normalize: false
