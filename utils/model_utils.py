@@ -301,7 +301,10 @@ def get_optimizer(config: ConfigDict, model: torch.nn.Module) -> torch.optim.Opt
             dict(params=adam_params, use_muon=False, **adam_group_config),
         ]
         optimizer = AdaGO(param_groups)
-        return optimizer
+    else:
+        raise SystemExit(f"Unknown optimizer '{name_optimizer}' specified in config.training.optimizer")
+
+    return optimizer
 
 
 def normalize_batch(x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
